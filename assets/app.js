@@ -55,14 +55,37 @@
     show(0);start();
   });
 
-  /* ---- font-size & contrast settings (in-memory; applies live to <html>) ---- */
+  /* ---- font-size & contrast settings (persisted via localStorage; applies live to <html>) ---- */
   var root=document.documentElement;
-  window.KZ_applyFontScale=function(v){if(v==="normal")root.removeAttribute("data-fontscale");else root.setAttribute("data-fontscale",v);};
-  window.KZ_applyContrast=function(v){
-    if(v==="high")root.setAttribute("data-contrast","high");
-    else if(v==="dark")root.setAttribute("data-contrast","dark");
-    else root.removeAttribute("data-contrast");
+  window.KZ_applyFontScale=function(v){
+    if(v==="normal") {
+      root.removeAttribute("data-fontscale");
+      try { localStorage.removeItem("kz_fontscale"); } catch(e) {}
+    } else {
+      root.setAttribute("data-fontscale",v);
+      try { localStorage.setItem("kz_fontscale",v); } catch(e) {}
+    }
   };
+  window.KZ_applyContrast=function(v){
+    if(v==="high") {
+      root.setAttribute("data-contrast","high");
+      try { localStorage.setItem("kz_contrast","high"); } catch(e) {}
+    } else if(v==="dark") {
+      root.setAttribute("data-contrast","dark");
+      try { localStorage.setItem("kz_contrast","dark"); } catch(e) {}
+    } else {
+      root.removeAttribute("data-contrast");
+      try { localStorage.removeItem("kz_contrast"); } catch(e) {}
+    }
+  };
+  // Load persisted settings on startup
+  try {
+    var savedFont=localStorage.getItem("kz_fontscale");
+    if(savedFont) window.KZ_applyFontScale(savedFont);
+    var savedContrast=localStorage.getItem("kz_contrast");
+    if(savedContrast) window.KZ_applyContrast(savedContrast);
+  } catch(e){}
+
   // utility-bar quick toggles
   $$("[data-fontstep]").forEach(function(b){b.addEventListener("click",function(){
     var order=["normal","large","xlarge"],cur=root.getAttribute("data-fontscale")||"normal";
@@ -81,6 +104,15 @@
   /* settings form page */
   var sf=$("#settingsForm");
   if(sf){
+    try {
+      var savedFont=localStorage.getItem("kz_fontscale")||"normal";
+      var f_radio=sf.querySelector('input[name=fontsize][value='+savedFont+']');
+      if(f_radio) f_radio.checked=true;
+      var savedContrast=localStorage.getItem("kz_contrast")||"normal";
+      var c_radio=sf.querySelector('input[name=contrast][value='+savedContrast+']');
+      if(c_radio) c_radio.checked=true;
+    } catch(e){}
+
     sf.addEventListener("submit",function(e){e.preventDefault();
       var fs=(sf.querySelector('input[name=fontsize]:checked')||{}).value||"normal";
       var ct=(sf.querySelector('input[name=contrast]:checked')||{}).value||"normal";
@@ -105,6 +137,9 @@
     synth.cancel();synth.speak(u);reading=true;toast("音声読み上げを開始しました");
   }
   $$("[data-readaloud]").forEach(function(b){b.addEventListener("click",readAloud);});
+  if(window.speechSynthesis){
+    window.addEventListener("beforeunload",function(){window.speechSynthesis.cancel();});
+  }
 
   /* ---- toast ---- */
   var toastEl;
@@ -130,8 +165,18 @@
     input.addEventListener("input",function(){buildResults(list,input.value);});
     input.addEventListener("keydown",function(e){
       var links=$$("a",list),idx=links.findIndex(function(a){return a.classList.contains("active");});
-      if(e.key==="ArrowDown"){e.preventDefault();if(idx>=0)links[idx].classList.remove("active");links[Math.min(idx+1,links.length-1)].classList.add("active");}
-      else if(e.key==="ArrowUp"){e.preventDefault();if(idx>=0)links[idx].classList.remove("active");links[Math.max(idx-1,0)].classList.add("active");}
+      if(e.key==="ArrowDown"){
+        e.preventDefault();
+        if(idx>=0)links[idx].classList.remove("active");
+        var nextLink=links[Math.min(idx+1,links.length-1)];
+        if(nextLink){nextLink.classList.add("active");nextLink.scrollIntoView({block:"nearest"});}
+      }
+      else if(e.key==="ArrowUp"){
+        e.preventDefault();
+        if(idx>=0)links[idx].classList.remove("active");
+        var prevLink=links[Math.max(idx-1,0)];
+        if(prevLink){prevLink.classList.add("active");prevLink.scrollIntoView({block:"nearest"});}
+      }
       else if(e.key==="Enter"){var a=list.querySelector("a.active");if(a){e.preventDefault();window.location.href=a.getAttribute("href");}}
       else if(e.key==="Escape"){close();}
     });

@@ -6,6 +6,14 @@
 <title>文字サイズ・色合いの変更 ｜ 甲府市遊亀公園附属動物園</title>
 <meta name="description" content="文字のサイズと色合い（高コントラスト）を変更できます。音声読み上げにも対応。">
 <link rel="stylesheet" href="assets/styles.css">
+<script>
+  (function(){
+    try {
+      var f=localStorage.getItem("kz_fontscale"); if(f&&f!=="normal")document.documentElement.setAttribute("data-fontscale",f);
+      var c=localStorage.getItem("kz_contrast"); if(c&&c!=="normal")document.documentElement.setAttribute("data-contrast",c);
+    }catch(e){}
+  })();
+</script>
 </head>
 <body>
 <a class="skip" href="#main">本文へスキップします。</a>
