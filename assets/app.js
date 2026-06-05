@@ -1,4 +1,4 @@
-/* Kofu Yuki Zoo redesign — shared interactions. No localStorage (in-memory only). */
+/* Kofu Yuki Zoo redesign — shared interactions. Settings persisted via localStorage. */
 (function(){
   "use strict";
   var $=function(s,c){return (c||document).querySelector(s);};
@@ -52,6 +52,12 @@
     dots.forEach(function(d,k){d.addEventListener("click",function(){show(k);start();});});
     car.addEventListener("mouseenter",function(){if(timer){clearInterval(timer);timer=null;}});
     car.addEventListener("mouseleave",function(){if(playing)start();});
+    car.addEventListener("focusin",function(){if(timer){clearInterval(timer);timer=null;}});
+    car.addEventListener("focusout",function(){if(playing)start();});
+    car.addEventListener("keydown",function(e){
+      if(e.key==="ArrowLeft"){e.preventDefault();prev();start();}
+      else if(e.key==="ArrowRight"){e.preventDefault();next();start();}
+    });
     show(0);start();
   });
 
