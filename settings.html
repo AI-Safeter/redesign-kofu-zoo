@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字サイズ・色合いの変更 ｜ 甲府市遊亀公園附属動物園</title>
+<meta name="description" content="文字のサイズと色合い（高コントラスト）を変更できます。音声読み上げにも対応。">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<a class="skip" href="#main">本文へスキップします。</a>
+
+<!-- ===== Header (shared) ===== -->
+<header class="site-header">
+  <div class="utilbar">
+    <div class="container">
+      <button type="button" data-readaloud aria-label="音声読み上げ">🔊 <span class="label-hide">音声読み上げ</span></button>
+      <button type="button" data-fontstep aria-label="文字サイズ変更">🔡 <span class="label-hide">文字サイズ</span></button>
+      <button type="button" data-contrasttoggle aria-label="色合い変更">◐ <span class="label-hide">色合い</span></button>
+      <a href="language.html">🌐 <span class="label-hide">Foreign Language</span></a>
+      <button type="button" data-search aria-label="サイト内検索">🔍 <span class="label-hide">検索</span></button>
+      <span class="sep" aria-hidden="true">|</span>
+      <a href="https://www.city.kofu.yamanashi.jp/index.html" class="ext">甲府市トップへ</a>
+    </div>
+  </div>
+  <div class="container headmain">
+    <a class="brand" href="index.html" aria-label="甲府市遊亀公園附属動物園 ホーム">
+      <svg class="mark" viewBox="0 0 48 48" role="img" aria-hidden="true">
+        <circle cx="24" cy="24" r="23" fill="#2E7D46"/>
+        <circle cx="24" cy="28" r="9" fill="#FBF4E4"/>
+        <circle cx="14.5" cy="17" r="3.4" fill="#FBF4E4"/><circle cx="33.5" cy="17" r="3.4" fill="#FBF4E4"/>
+        <circle cx="9" cy="26" r="3" fill="#FBF4E4"/><circle cx="39" cy="26" r="3" fill="#FBF4E4"/>
+        <path d="M24 6 q4 6 0 10 q-4-4 0-10z" fill="#E27A1E"/>
+      </svg>
+      <span class="wm"><b>遊亀公園附属動物園</b><span>Kofu Yuki Zoo</span></span>
+    </a>
+    <nav class="mainnav" aria-label="メインメニュー">
+      <a href="index.html">ホーム</a>
+      <a href="guide.html">ご案内</a>
+      <a href="animals.html">動物たちの紹介</a>
+      <a href="https://www.city.kofu.yamanashi.jp/kofuyukizoo/" class="ext">スタッフブログ</a>
+      <a href="zoomup.html">Zoom Up</a>
+      <a href="naze.html">なぜなぜBOX</a>
+      <a href="guide.html#access">アクセス</a>
+    </nav>
+    <button class="navtoggle" id="navToggle" aria-label="メニューを開く" aria-controls="drawer" aria-expanded="false">☰ メニュー</button>
+  </div>
+</header>
+
+<!-- drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<nav class="drawer" id="drawer" aria-label="モバイルメニュー" aria-hidden="true">
+  <button class="closex" id="drawerClose" aria-label="閉じる">×</button>
+  <h2>メニュー</h2>
+  <a href="index.html">ホーム</a>
+  <a href="guide.html">ご案内</a>
+  <a href="animals.html">動物たちの紹介</a>
+  <a href="https://www.city.kofu.yamanashi.jp/kofuyukizoo/" class="ext">スタッフブログ</a>
+  <a href="zoomup.html">Zoom Up</a>
+  <a href="naze.html">なぜなぜBOX</a>
+  <a href="guide.html#access">アクセス</a>
+  <a href="news.html">ニュース</a>
+  <a href="support.html">動物園を応援しよう</a>
+  <a href="language.html">Foreign Language</a>
+  <a href="settings.html" aria-current="page">文字サイズ・色合いの変更</a>
+  <a href="sitemap.html">サイトマップ</a>
+</nav>
+
+<main id="main">
+<div class="container"><nav class="crumbs" aria-label="パンくず"><a href="index.html">ホーム</a> &gt; 文字サイズ・色合いの変更</nav></div><section class="pagehero"><div class="container"><h1>文字サイズ・色合いの変更</h1><p>ご覧のWebページについて、文字のサイズと色合いを設定できます。設定した内容は、このセッション中の全てのページに適用されます。</p></div></section>
+<section class="section"><div class="container">
+<form class="settings-form" id="settingsForm">
+<fieldset><legend>文字のサイズ</legend>
+<div class="radiorow">
+<label><input type="radio" name="fontsize" value="normal" checked><span>標準</span></label>
+<label><input type="radio" name="fontsize" value="large"><span>大きく</span></label>
+<label><input type="radio" name="fontsize" value="xlarge"><span>もっと大きく</span></label>
+</div></fieldset>
+<fieldset><legend>色合い</legend>
+<div class="radiorow">
+<label><input type="radio" name="contrast" value="normal" checked><span>標準</span></label>
+<label><input type="radio" name="contrast" value="high"><span>高コントラスト（白黒）</span></label>
+<label><input type="radio" name="contrast" value="dark"><span>ダークモード</span></label>
+</div></fieldset>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<button class="btn btn--primary" type="submit">設定する</button>
+<button class="btn btn--ghost" type="button" id="settingsReset">標準に戻す</button>
+</div>
+</form>
+<p class="callout" style="margin-top:var(--s-5)">ヒント：ヘッダー右上のアイコン（🔡 文字サイズ ／ ◐ 色合い）からも、どのページでもすぐに切り替えられます。音声読み上げ（🔊）もご利用いただけます。</p>
+<p><a class="backtop" href="#main">▲ ページの先頭へ戻る</a></p>
+</div></section>
+
+</main>
+
+<!-- ===== Footer (shared) ===== -->
+<footer class="site-footer">
+  <div class="container">
+    <div>
+      <h3>甲府市遊亀公園附属動物園</h3>
+      <p class="foot-addr">〒400-0865<br>山梨県甲府市太田町10番1号<br>電話番号：055-233-3875</p>
+    </div>
+    <div>
+      <h3>ナビゲーション</h3>
+      <ul>
+        <li><a href="index.html">ホーム</a></li>
+        <li><a href="guide.html">ご案内・アクセス</a></li>
+        <li><a href="animals.html">動物たちの紹介</a></li>
+        <li><a href="zoomup.html">Zoom Up</a></li>
+        <li><a href="naze.html">なぜなぜBOX</a></li>
+        <li><a href="news.html">ニュース</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>ご利用案内</h3>
+      <ul>
+        <li><a href="support.html">動物園を応援しよう</a></li>
+        <li><a href="language.html">Foreign Language</a></li>
+        <li><a href="settings.html">文字サイズ・色合いの変更</a></li>
+        <li><a href="sitemap.html">サイトマップ</a></li>
+        <li><a href="https://www.city.kofu.yamanashi.jp/index.html" class="ext">甲府市トップへ</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-bottom"><div class="container"><span>Copyright © Kofu City. All rights reserved.</span><span>甲府市遊亀公園附属動物園</span></div></div>
+</footer>
+
+<!-- search overlay -->
+<div class="overlay" id="searchOverlay" aria-hidden="true">
+  <div class="searchbox" role="dialog" aria-label="サイト内検索">
+    <input id="searchInput" type="search" placeholder="サイト内を検索（例：料金、ペンギン、アクセス）" aria-label="検索キーワード">
+    <ul class="results" id="searchResults"></ul>
+  </div>
+</div>
+<!-- command palette -->
+<div class="overlay" id="palette" aria-hidden="true">
+  <div class="palette" role="dialog" aria-label="コマンドパレット">
+    <input id="paletteInput" type="search" placeholder="ページへ移動…  (⌘K / Ctrl+K)" aria-label="コマンドパレット">
+    <ul class="results" id="paletteResults"></ul>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+
+</body>
+</html>

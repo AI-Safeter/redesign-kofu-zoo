@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>甲府市遊亀公園附属動物園 ｜ Yuki Zoo</title>
+<meta name="description" content="甲府市遊亀公園附属動物園（Yuki Zoo）公式ホームページ。大正8年開設、100周年を迎えた歴史ある都市型動物園。現在リニューアル工事のため休園中です。">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<a class="skip" href="#main">本文へスキップします。</a>
+
+<!-- ===== Header (shared) ===== -->
+<header class="site-header">
+  <div class="utilbar">
+    <div class="container">
+      <button type="button" data-readaloud aria-label="音声読み上げ">🔊 <span class="label-hide">音声読み上げ</span></button>
+      <button type="button" data-fontstep aria-label="文字サイズ変更">🔡 <span class="label-hide">文字サイズ</span></button>
+      <button type="button" data-contrasttoggle aria-label="色合い変更">◐ <span class="label-hide">色合い</span></button>
+      <a href="language.html">🌐 <span class="label-hide">Foreign Language</span></a>
+      <button type="button" data-search aria-label="サイト内検索">🔍 <span class="label-hide">検索</span></button>
+      <span class="sep" aria-hidden="true">|</span>
+      <a href="https://www.city.kofu.yamanashi.jp/index.html" class="ext">甲府市トップへ</a>
+    </div>
+  </div>
+  <div class="container headmain">
+    <a class="brand" href="index.html" aria-label="甲府市遊亀公園附属動物園 ホーム">
+      <svg class="mark" viewBox="0 0 48 48" role="img" aria-hidden="true">
+        <circle cx="24" cy="24" r="23" fill="#2E7D46"/>
+        <circle cx="24" cy="28" r="9" fill="#FBF4E4"/>
+        <circle cx="14.5" cy="17" r="3.4" fill="#FBF4E4"/><circle cx="33.5" cy="17" r="3.4" fill="#FBF4E4"/>
+        <circle cx="9" cy="26" r="3" fill="#FBF4E4"/><circle cx="39" cy="26" r="3" fill="#FBF4E4"/>
+        <path d="M24 6 q4 6 0 10 q-4-4 0-10z" fill="#E27A1E"/>
+      </svg>
+      <span class="wm"><b>遊亀公園附属動物園</b><span>Kofu Yuki Zoo</span></span>
+    </a>
+    <nav class="mainnav" aria-label="メインメニュー">
+      <a href="index.html" aria-current="page">ホーム</a>
+      <a href="guide.html">ご案内</a>
+      <a href="animals.html">動物たちの紹介</a>
+      <a href="https://www.city.kofu.yamanashi.jp/kofuyukizoo/" class="ext">スタッフブログ</a>
+      <a href="zoomup.html">Zoom Up</a>
+      <a href="naze.html">なぜなぜBOX</a>
+      <a href="guide.html#access">アクセス</a>
+    </nav>
+    <button class="navtoggle" id="navToggle" aria-label="メニューを開く" aria-controls="drawer" aria-expanded="false">☰ メニュー</button>
+  </div>
+</header>
+
+<!-- drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<nav class="drawer" id="drawer" aria-label="モバイルメニュー" aria-hidden="true">
+  <button class="closex" id="drawerClose" aria-label="閉じる">×</button>
+  <h2>メニュー</h2>
+  <a href="index.html">ホーム</a>
+  <a href="guide.html">ご案内</a>
+  <a href="animals.html">動物たちの紹介</a>
+  <a href="https://www.city.kofu.yamanashi.jp/kofuyukizoo/" class="ext">スタッフブログ</a>
+  <a href="zoomup.html">Zoom Up</a>
+  <a href="naze.html">なぜなぜBOX</a>
+  <a href="guide.html#access">アクセス</a>
+  <a href="news.html">ニュース</a>
+  <a href="support.html">動物園を応援しよう</a>
+  <a href="language.html">Foreign Language</a>
+  <a href="settings.html">文字サイズ・色合いの変更</a>
+  <a href="sitemap.html">サイトマップ</a>
+</nav>
+
+<main id="main">
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div>
+        <p class="eyebrow">Since 1919 ・ 大正8年開設</p>
+        <h1>まちのまんなかで、<br>いきものと出会う。</h1>
+        <p class="tagline">甲府市のほぼ中心にある、だれもが気軽に楽しめる都市型動物園。動物たちの“今”を、もっと近くで。</p>
+        <div class="statusbanner" role="status">
+          <span aria-hidden="true">🚧</span>
+          <p><b>現在、整備工事のため休園中です。</b><br>生まれ変わる動物園を楽しみにお待ちください。最新の情報は<a href="news.html">ニュース</a>と<a href="#renewal">リニューアルの状況</a>でお知らせします。</p>
+        </div>
+        <div class="cta-row">
+          <a class="btn btn--cta" href="support.html">♥ 動物園を応援しよう</a>
+          <a class="btn btn--ghost" href="animals.html">動物たちを見る</a>
+        </div>
+      </div>
+      <div class="hero__art">
+        <div class="carousel" aria-roledescription="カルーセル" aria-label="動物園のようす">
+          <div class="carousel__track">
+            <figure class="slide active" role="group" aria-label="1 / 5">
+              <img src="assets/gallery3.jpg" alt="アジアゾウ" width="480" height="360">
+              <figcaption>アジアゾウ</figcaption>
+            </figure>
+            <figure class="slide" role="group" aria-label="2 / 5">
+              <img src="assets/gallery4.jpg" alt="ブラジルバク" width="480" height="360">
+              <figcaption>ブラジルバク</figcaption>
+            </figure>
+            <figure class="slide" role="group" aria-label="3 / 5">
+              <img src="assets/gallery5.jpg" alt="マゼランペンギン" width="480" height="360">
+              <figcaption>マゼランペンギン</figcaption>
+            </figure>
+            <figure class="slide" role="group" aria-label="4 / 5">
+              <img src="assets/gallery6.jpg" alt="ハムスター" width="480" height="360">
+              <figcaption>ハムスター</figcaption>
+            </figure>
+            <figure class="slide" role="group" aria-label="5 / 5">
+              <img src="assets/gallery9.jpg" alt="ワライカワセミ" width="480" height="360">
+              <figcaption>ワライカワセミ</figcaption>
+            </figure>
+          </div>
+          <button class="carousel__ctrl prev" aria-label="前のスライド">‹</button>
+          <button class="carousel__ctrl next" aria-label="次のスライド">›</button>
+          <div class="carousel__bar" role="tablist" aria-label="スライド選択">
+            <button role="tab" aria-selected="true" aria-label="スライド1"></button>
+            <button role="tab" aria-selected="false" aria-label="スライド2"></button>
+            <button role="tab" aria-selected="false" aria-label="スライド3"></button>
+            <button role="tab" aria-selected="false" aria-label="スライド4"></button>
+            <button role="tab" aria-selected="false" aria-label="スライド5"></button>
+            <button class="carousel__stop" aria-label="自動再生の停止／再生">❚❚ STOP</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick actions -->
+  <section class="section">
+    <div class="container">
+      <div class="cardgrid">
+        <a class="card" href="guide.html">
+          <div class="card__media" style="background:var(--c-sky)"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#2C7DA0" stroke-width="1.6"><path d="M12 21s-7-5.2-7-11a7 7 0 1 1 14 0c0 5.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div>
+          <div class="card__body"><h3>ご案内・アクセス</h3><p>開園時間・料金・園内マップ・交通案内。</p><span class="more">くわしく見る →</span></div>
+        </a>
+        <a class="card" href="animals.html">
+          <div class="card__media" style="background:var(--c-tint)"><svg width="64" height="64" viewBox="0 0 24 24" fill="#2E7D46"><circle cx="7" cy="9" r="2"/><circle cx="17" cy="9" r="2"/><circle cx="4.5" cy="13.5" r="1.6"/><circle cx="19.5" cy="13.5" r="1.6"/><ellipse cx="12" cy="16" rx="4.5" ry="3.4"/></svg></div>
+          <div class="card__body"><h3>動物たちの紹介</h3><p>哺乳類・鳥類・は虫類の仲間たちと動画集。</p><span class="more">くわしく見る →</span></div>
+        </a>
+        <a class="card" href="naze.html">
+          <div class="card__media" style="background:var(--c-sand)"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#B85F12" stroke-width="1.8"><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7"/><circle cx="12" cy="16.5" r="1"/><rect x="3.5" y="3.5" width="17" height="17" rx="4"/></svg></div>
+          <div class="card__body"><h3>なぜなぜBOX</h3><p>動物のふしぎへの“こたえ”を紹介。</p><span class="more">くわしく見る →</span></div>
+        </a>
+        <a class="card" href="zoomup.html">
+          <div class="card__media" style="background:var(--c-cream)"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#2E7D46" stroke-width="1.8"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg></div>
+          <div class="card__body"><h3>Zoom Up</h3><p>「広報こうふ」掲載のZOOむアップ記事。</p><span class="more">くわしく見る →</span></div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Visit quick facts -->
+  <section class="section section--sand">
+    <div class="container">
+      <div class="section__head"><div><p class="eyebrow">Visit</p><h2>来園案内（クイック）</h2></div><a class="btn btn--ghost btn--sm" href="guide.html">ご案内をすべて見る →</a></div>
+      <div class="featrow">
+        <div class="feat"><h3>🕘 開園時間</h3><p>4～10月 9:00–17:00／11～3月 9:30–16:30（入園は閉園30分前まで）。<a href="guide.html#hours">詳細</a></p></div>
+        <div class="feat"><h3>🎟 料金</h3><p>大人320円／子ども（小・中学生）30円。団体・減額免除あり。<a href="guide.html#fees">料金表</a></p></div>
+        <div class="feat"><h3>🚃 アクセス</h3><p>JR甲府駅南口よりバス「遊亀公園前」下車／甲府南ICより約10分。<a href="guide.html#access">行き方</a></p></div>
+      </div>
+      <p class="callout callout--warn" style="margin-top:var(--s-5)"><strong>休園日：</strong>毎週月曜日（祝日の場合は翌火曜日）・年末年始。<strong>現在は整備工事のため休園中です。</strong></p>
+    </div>
+  </section>
+
+  <!-- News -->
+  <section class="section section--tint">
+    <div class="container">
+      <div class="section__head">
+        <div><p class="eyebrow">News</p><h2>ニュース</h2></div>
+        <a class="btn btn--ghost btn--sm" href="news.html">ニュース一覧を見る →</a>
+      </div>
+      <ul class="newslist">
+        <li><a href="news.html"><time>2026.03</time><span class="tag tag--event">イベント</span><span>第29回「休園中の動物園で動物に会おう」</span></a></li>
+        <li><a href="news.html"><time>2026.02</time><span class="tag tag--info">お知らせ</span><span>ルリコンゴウインコのヒナが生まれました</span></a></li>
+        <li><a href="news.html"><time>2026.01</time><span class="tag tag--info">公募</span><span>遊亀公園・附属動物園整備及び管理運営事業に係る公募型プロポーザルの実施について</span></a></li>
+        <li><a href="news.html"><time>2025.12</time><span class="tag tag--sad">訃報</span><span>エリマキキツネザルのエリが亡くなりました</span></a></li>
+        <li><a href="news.html"><time>2025.12</time><span class="tag tag--event">イベント</span><span>第28回「休園中の動物園で動物に会おう」</span></a></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Renewal -->
+  <section class="section" id="renewal">
+    <div class="container">
+      <div class="section__head"><div><p class="eyebrow">Renewal</p><h2>リニューアルの状況</h2></div></div>
+      <p class="lead" style="margin-bottom:var(--s-6)">生まれ変わる動物園を楽しみにお待ちください。整備の進捗と、これからの運営についてお知らせします。</p>
+      <div class="grid-2">
+        <article class="feat" id="construction">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#2E7D46" stroke-width="1.8"><path d="M3 21h18"/><path d="M5 21V8l5-3 5 3v13"/><path d="M9 21v-5h2v5"/></svg>
+          <h3>動物園リニューアル工事の進捗</h3>
+          <p>遊亀公園および附属動物園の整備工事を進めています。工事の進捗状況を随時お知らせします。</p>
+          <a class="more" href="news.html">進捗を見る →</a>
+        </article>
+        <article class="feat" id="ppp">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#E27A1E" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M15 20c0-2 1.5-3.5 4-3.5"/></svg>
+          <h3>民間活力導入の検討</h3>
+          <p>より魅力的な動物園・公園づくりに向け、公募型プロポーザル等による民間活力の導入を検討しています。</p>
+          <a class="more" href="news.html">くわしく見る →</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Connect / external -->
+  <section class="section section--cream">
+    <div class="container">
+      <div class="section__head"><div><p class="eyebrow">Connect</p><h2>もっと楽しむ</h2></div></div>
+      <div class="cardgrid">
+        <a class="card" href="https://www.facebook.com/" >
+          <div class="card__media" style="background:#e9f1f5"><svg width="56" height="56" viewBox="0 0 24 24" fill="#2C7DA0"><path d="M22 12a10 10 0 10-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.2c-1.2 0-1.6.8-1.6 1.6V12h2.7l-.4 2.9h-2.3v7A10 10 0 0022 12z"/></svg></div>
+          <div class="card__body"><h3 class="ext">SNSで“今”を配信中</h3><p>動物たちの最新のようすをFacebookでお届けしています。</p><span class="more">Facebookを見る ↗</span></div>
+        </a>
+        <a class="card" href="https://www.city.kofu.yamanashi.jp/kofuyukizoo/">
+          <div class="card__media" style="background:var(--c-tint)"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#2E7D46" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h7"/></svg></div>
+          <div class="card__body"><h3 class="ext">スタッフブログ</h3><p>飼育スタッフが日々のできごとをつづります。</p><span class="more">ブログを読む ↗</span></div>
+        </a>
+        <a class="card" href="https://www.city.kofu.yamanashi.jp/yukikoen/">
+          <div class="card__media" style="background:var(--c-sand)"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#E27A1E" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg></div>
+          <div class="card__body"><h3 class="ext">こども遊園地</h3><p>遊亀公園内の遊園地の情報はこちら。</p><span class="more">遊園地のHP ↗</span></div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Notice -->
+  <section class="section">
+    <div class="container">
+      <div class="callout">
+        <strong>お知らせ：</strong> 動物取扱業業者登録について（登録番号 第1071073号 ほか）は<a href="guide.html#registration">ご案内ページ</a>に掲載しています。
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===== Footer (shared) ===== -->
+<footer class="site-footer">
+  <div class="container">
+    <div>
+      <h3>甲府市遊亀公園附属動物園</h3>
+      <p class="foot-addr">〒400-0865<br>山梨県甲府市太田町10番1号<br>電話番号：055-233-3875</p>
+    </div>
+    <div>
+      <h3>ナビゲーション</h3>
+      <ul>
+        <li><a href="index.html">ホーム</a></li>
+        <li><a href="guide.html">ご案内・アクセス</a></li>
+        <li><a href="animals.html">動物たちの紹介</a></li>
+        <li><a href="zoomup.html">Zoom Up</a></li>
+        <li><a href="naze.html">なぜなぜBOX</a></li>
+        <li><a href="news.html">ニュース</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>ご利用案内</h3>
+      <ul>
+        <li><a href="support.html">動物園を応援しよう</a></li>
+        <li><a href="language.html">Foreign Language</a></li>
+        <li><a href="settings.html">文字サイズ・色合いの変更</a></li>
+        <li><a href="sitemap.html">サイトマップ</a></li>
+        <li><a href="https://www.city.kofu.yamanashi.jp/index.html" class="ext">甲府市トップへ</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-bottom"><div class="container"><span>Copyright © Kofu City. All rights reserved.</span><span>甲府市遊亀公園附属動物園</span></div></div>
+</footer>
+
+<!-- search overlay -->
+<div class="overlay" id="searchOverlay" aria-hidden="true">
+  <div class="searchbox" role="dialog" aria-label="サイト内検索">
+    <input id="searchInput" type="search" placeholder="サイト内を検索（例：料金、ペンギン、アクセス）" aria-label="検索キーワード">
+    <ul class="results" id="searchResults"></ul>
+  </div>
+</div>
+<!-- command palette -->
+<div class="overlay" id="palette" aria-hidden="true">
+  <div class="palette" role="dialog" aria-label="コマンドパレット">
+    <input id="paletteInput" type="search" placeholder="ページへ移動…  (⌘K / Ctrl+K)" aria-label="コマンドパレット">
+    <ul class="results" id="paletteResults"></ul>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
