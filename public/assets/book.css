@@ -1,15 +1,15 @@
 /* Life-chronicle e-book reader. Also inlined into downloaded standalone books. */
 
 :root {
-  --paper: #f6f1e7;
-  --page: #fffdf8;
-  --ink: #2a2520;
-  --ink-soft: #5e554b;
-  --muted: #8b8074;
-  --rule: #e3d9c8;
-  --accent: #8c3b26;
-  --accent-soft: #f1e2d6;
-  --shadow: 0 1px 2px rgba(60, 40, 20, 0.06), 0 12px 40px rgba(60, 40, 20, 0.10);
+  --paper: #f1f1ed;
+  --page: #fcfcfa;
+  --ink: #1f2329;
+  --ink-soft: #4d5560;
+  --muted: #7a828c;
+  --rule: #dfe1e3;
+  --accent: #2c4a78;
+  --accent-soft: #e4eaf3;
+  --shadow: 0 1px 2px rgba(20, 30, 45, 0.06), 0 12px 40px rgba(20, 30, 45, 0.10);
   --serif: "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif;
   --sans: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --text-size: 1.0625rem;
@@ -18,27 +18,27 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #171412;
-    --page: #201c19;
-    --ink: #ebe3d6;
-    --ink-soft: #c5baa9;
-    --muted: #978b7c;
-    --rule: #3a332d;
-    --accent: #e09a7f;
-    --accent-soft: #3a2a22;
+    --paper: #14171b;
+    --page: #1b1f24;
+    --ink: #e6e8eb;
+    --ink-soft: #b8bec6;
+    --muted: #8a929c;
+    --rule: #30363d;
+    --accent: #9fb8e0;
+    --accent-soft: #232f42;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #171412;
-  --page: #201c19;
-  --ink: #ebe3d6;
-  --ink-soft: #c5baa9;
-  --muted: #978b7c;
-  --rule: #3a332d;
-  --accent: #e09a7f;
-  --accent-soft: #3a2a22;
+  --paper: #14171b;
+  --page: #1b1f24;
+  --ink: #e6e8eb;
+  --ink-soft: #b8bec6;
+  --muted: #8a929c;
+  --rule: #30363d;
+  --accent: #9fb8e0;
+  --accent-soft: #232f42;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
@@ -410,7 +410,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 /* Print / Save as PDF: every page on its own sheet */
 @media print {
   @page { size: A5; margin: 16mm 14mm; }
-  :root { --paper: #fff; --page: #fff; --ink: #000; --ink-soft: #333; --muted: #555; --rule: #ccc; --accent: #7a2f1d; }
+  :root { --paper: #fff; --page: #fff; --ink: #000; --ink-soft: #333; --muted: #555; --rule: #ccc; --accent: #2c4a78; }
   .reader__top, .reader__nav, .reader__progress, .reader__editnote { display: none !important; }
   .reader__stage { display: block; padding: 0; }
   .page { display: block !important; box-shadow: none; max-width: none; animation: none !important; break-after: page; }
