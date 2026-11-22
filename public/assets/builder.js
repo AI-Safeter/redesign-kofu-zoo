@@ -8,7 +8,7 @@
   var DRAFT_KEY = "chronicle:draft";
   var ACCESS_KEY = "chronicle:access";
   var CHAPTER_CONCURRENCY = 3;
-  var TRANSCRIBE_CONCURRENCY = 3;
+  var TRANSCRIBE_CONCURRENCY = 2; // Groq free tier allows ~20 requests/minute
 
   var config = { accessCodeRequired: false, transcription: true, writing: true };
   var audioFile = null;
@@ -206,6 +206,40 @@
     box.querySelector(".progress__label").textContent = label;
   }
 
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+  // Sends one chunk; waits out rate limits (429 + retryAfter) and retries transient errors.
+  async function transcribeChunk(chunk, i, hint, onWait) {
+    var url = "/api/transcribe?index=" + i + "&name=" + encodeURIComponent(chunk.name) +
+      (hint ? "&hint=" + encodeURIComponent(hint) : "");
+    var failures = 0, waits = 0;
+    for (;;) {
+      var res;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: headers({ "content-type": chunk.type || "audio/wav" }),
+          body: chunk.blob,
+        });
+      } catch (e) {
+        if (++failures >= 3) throw new Error("네트워크 오류로 음성 인식에 실패했습니다.");
+        await sleep(1500 * failures);
+        continue;
+      }
+      var data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (res.ok) return data.text || "";
+      if (res.status === 429 && data.retryAfter && waits++ < 20) {
+        onWait(data.retryAfter);
+        await sleep(data.retryAfter * 1000);
+        continue;
+      }
+      var err = new Error(data.error || "서버 오류 (" + res.status + ")");
+      if ([401, 413, 500].indexOf(res.status) >= 0 || ++failures >= 3) throw err;
+      await sleep(1500 * failures);
+    }
+  }
+
   async function transcribe() {
     if (!audioFile || busy) return;
     busy = true;
@@ -222,21 +256,10 @@
       setTranscribeProgress(0.05, "음성을 글로 옮기는 중… 0/" + chunks.length + lengthNote);
 
       await pool(chunks, TRANSCRIBE_CONCURRENCY, async function (chunk, i) {
-        texts[i] = await withRetry(async function () {
-          var url = "/api/transcribe?index=" + i + "&name=" + encodeURIComponent(chunk.name) +
-            (hint ? "&hint=" + encodeURIComponent(hint) : "");
-          var res = await fetch(url, {
-            method: "POST",
-            headers: headers({ "content-type": chunk.type || "audio/wav" }),
-            body: chunk.blob,
-          });
-          if (!res.ok) {
-            var err = new Error(await readError(res));
-            err.fatal = res.status === 401 || res.status === 500;
-            throw err;
-          }
-          return (await res.json()).text;
-        }, 3);
+        texts[i] = await transcribeChunk(chunk, i, hint, function (sec) {
+          setTranscribeProgress(0.05 + 0.95 * (done / chunks.length),
+            "무료 사용량 한도에 걸려 " + sec + "초 기다리는 중… " + done + "/" + chunks.length + lengthNote);
+        });
         done++;
         setTranscribeProgress(0.05 + 0.95 * (done / chunks.length), "음성을 글로 옮기는 중… " + done + "/" + chunks.length + lengthNote);
       });
@@ -469,7 +492,7 @@
     }
     $("access-field").hidden = !config.accessCodeRequired;
     var problems = [];
-    if (!config.transcription) problems.push("음성 인식용 OPENAI_API_KEY가 없어 오디오를 글로 옮길 수 없습니다. 녹취록을 직접 붙여넣어 주세요.");
+    if (!config.transcription) problems.push("음성 인식용 GROQ_API_KEY가 없어 오디오를 글로 옮길 수 없습니다. 녹취록을 직접 붙여넣어 주세요.");
     if (!config.writing) problems.push("ANTHROPIC_API_KEY가 없어 책을 쓸 수 없습니다.");
     if (config.mock) problems.push("모의(MOCK) 모드입니다. 실제 AI 대신 샘플 내용으로 동작합니다.");
     if (problems.length && $("notice").hidden) {

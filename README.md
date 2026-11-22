@@ -11,7 +11,7 @@ Upload a recorded interview (Korean) and get a 10–13 page HTML e-book that chr
 Browser                                   Vercel functions (api/)            External APIs
 ───────                                   ───────────────────────            ─────────────
 audio file ─▶ decode at 16 kHz mono,
-              cut into ~100 s WAV chunks ─▶ /api/transcribe (per chunk) ─▶ OpenAI speech-to-text (Korean)
+              cut into ~100 s WAV chunks ─▶ /api/transcribe (per chunk) ─▶ Groq Whisper large-v3 (Korean, free tier)
 transcript (user reviews & fixes names)
             ─▶ /api/outline ─────────────▶ Claude: title, chapter plan, prologue, timeline, epilogue
             ─▶ /api/chapter × N (3 at once) ▶ Claude: each chapter's text + pull quote
@@ -19,7 +19,8 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
                                    dark mode, print/PDF, download as one standalone .html file)
 ```
 
-- Long recordings are split in the browser, at quiet moments, so every request stays under Vercel's 4.5 MB body limit and Whisper's 25 MB limit.
+- Long recordings are split in the browser, at quiet moments, so every request stays under Vercel's 4.5 MB body limit.
+- When Groq's free tier says "slow down", the browser waits the time Groq asks for and retries that chunk automatically.
 - Each chapter is its own request, so no single function call comes close to the 300 s limit. The transcript is sent with prompt caching, so repeated calls for one book reuse it cheaply.
 - Claude is told to use only facts from the interview, quote the interviewee's real words, and leave uncertain dates approximate.
 - Nothing is stored on the server. Books live in the browser that made them, and **저장** downloads a single self-contained `.html` file you can send to family.
@@ -33,11 +34,13 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
    | Name | Required | What for |
    |---|---|---|
    | `ANTHROPIC_API_KEY` | yes | Writing the book (Claude). Get one at <https://platform.claude.com> |
-   | `OPENAI_API_KEY` | for audio | Transcribing audio. Without it, users can still paste a transcript |
+   | `GROQ_API_KEY` | for audio | Transcribing audio, free. Create a key at <https://console.groq.com/keys>. Without it, users can still paste a transcript |
    | `ACCESS_CODE` | recommended | If set, visitors must enter this code before the app calls the paid APIs |
    | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5` |
    | `CLAUDE_EFFORT` | no | `low` / `medium` / `high` (default) / `xhigh` / `max` |
-   | `OPENAI_TRANSCRIBE_MODEL` | no | Defaults to `whisper-1` (`gpt-4o-transcribe` also works) |
+   | `GROQ_TRANSCRIBE_MODEL` | no | Defaults to `whisper-large-v3` (`whisper-large-v3-turbo` is faster, slightly less accurate) |
+   | `OPENAI_API_KEY` | no | Paid alternative to Groq for transcription; used only when `GROQ_API_KEY` is not set or `TRANSCRIBE_PROVIDER=openai` |
+   | `OPENAI_TRANSCRIBE_MODEL` | no | Defaults to `whisper-1` |
 
 4. Redeploy so the variables take effect.
 
@@ -45,7 +48,7 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 
 ## Rough cost per book
 
-For a 1-hour interview: transcription costs about $0.36 at Whisper's $0.006/minute. Writing is 1 outline call plus 5–8 chapter calls on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
+For a 1-hour interview: transcription is free on Groq's free tier, which allows about 2 hours of audio per hour (7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. Writing is 1 outline call plus 5–8 chapter calls on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
 
 ## Run locally
 
@@ -72,7 +75,7 @@ public/
     app.css             builder styles
 api/
   config.js             which features this deployment has keys for
-  transcribe.js         one audio chunk → text (OpenAI)
+  transcribe.js         one audio chunk → text (Groq, or OpenAI as a fallback)
   outline.js            transcript → book plan (Claude)
   chapter.js            transcript + plan → one chapter (Claude)
   _lib/claude.js        prompts, JSON schemas, Claude calls
