@@ -1,10 +1,6 @@
+node_modules/
+.env
+.env.local
+.vercel/
 .DS_Store
-# Ignore design specs & analysis folders for clean deployment
-closeout/
-cohort/
-design-intel/
-redesign-spec/
-target/
-visual/
-__MACOSX/
 *.log

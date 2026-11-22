@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>인생 이야기 전자책</title>
+  <meta name="description" content="인터뷰 녹음으로 엮은 한 사람의 인생 이야기">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/book.css">
+</head>
+<body>
+  <div id="book" class="reader">
+    <p style="margin:auto;padding:40px 16px;font-family:var(--sans);color:var(--muted)">책을 펼치는 중…</p>
+  </div>
+
+  <script src="/assets/book-render.js"></script>
+  <script src="/assets/library.js"></script>
+  <script>
+    (async function () {
+      var root = document.getElementById("book");
+      var params = new URLSearchParams(location.search);
+      var id = params.get("id");
+      var book = null;
+      var editable = false;
+
+      if (params.has("sample") || id === "sample") {
+        try {
+          var res = await fetch("/books/sample.json");
+          book = res.ok ? await res.json() : null;
+        } catch (e) {}
+      } else if (id) {
+        book = Library.get(id);
+        editable = !!book;
+      }
+
+      if (!book) {
+        root.innerHTML =
+          '<div style="margin:auto;padding:48px 16px;text-align:center;font-family:var(--sans)">' +
+          '<p style="font-size:1.1rem;margin:0 0 8px">책을 찾을 수 없습니다.</p>' +
+          '<p style="color:var(--muted);margin:0 0 24px">만든 책은 만든 기기의 브라우저에만 저장됩니다.</p>' +
+          '<a class="btn" href="/">서재로 가기</a></div>';
+        return;
+      }
+
+      ChronicleBook.mount(root, book, {
+        homeHref: "/",
+        onChange: editable
+          ? function (b) {
+              if (!Library.save(b)) alert("저장 공간이 부족해 변경 내용을 저장하지 못했습니다.");
+            }
+          : null,
+        extraActions: [
+          {
+            label: "저장",
+            title: "한 개의 HTML 파일로 내려받기 (가족에게 보내기 좋아요)",
+            onClick: function () {
+              Library.download(book).catch(function (e) {
+                alert(e.message);
+              });
+            },
+          },
+        ],
+      });
+    })();
+  </script>
+</body>
+</html>
