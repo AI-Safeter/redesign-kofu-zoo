@@ -23,15 +23,19 @@ export async function mockOutline(settings, onProgress) {
   }
   const chapters = book.chapters.slice(0, settings.chapters).map((c) => ({
     title: c.title,
-    period: c.period,
+    yearFrom: c.yearFrom,
+    yearTo: c.yearTo,
+    place: c.place,
     summary: c.summary,
+    events: [],
+    quotes: [c.pullQuote.text],
     notes: "(모의 데이터)",
   }));
-  while (chapters.length < settings.chapters) {
-    chapters.push({ ...chapters[chapters.length % book.chapters.length], title: `추가 장 ${chapters.length + 1}` });
-  }
-  const { title, subtitle, subjectName, born, epigraph, prologue, timeline, epilogue } = book;
-  return { outline: { title, subtitle, subjectName, born, epigraph, prologue, chapters, timeline, epilogue } };
+  const { title, subtitle, subjectName, birthYear, birthplace, epigraph, people, prologue, timeline, lastWords, epilogue } = book;
+  return {
+    outline: { title, subtitle, subjectName, birthYear, birthplace, epigraph, people, prologue, chapters, timeline: timeline.filter((t) => t.chapter <= chapters.length), lastWords, epilogue },
+    model: "mock",
+  };
 }
 
 export async function mockChapter(index, onProgress) {
@@ -41,5 +45,5 @@ export async function mockChapter(index, onProgress) {
     onProgress({ type: "progress", chars: i * 500 });
   }
   const c = book.chapters[index % book.chapters.length];
-  return { chapter: { paragraphs: c.paragraphs, pullQuote: c.pullQuote } };
+  return { chapter: { paragraphs: c.paragraphs, pullQuote: c.pullQuote, excerpt: c.excerpt, unverified: [] }, model: "mock" };
 }

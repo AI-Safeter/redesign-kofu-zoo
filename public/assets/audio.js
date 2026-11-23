@@ -29,21 +29,21 @@
     });
   }
 
+  // Mixes down to one channel without copying when the recording is already mono.
   function toMono(buffer) {
-    var n = buffer.length;
     var channels = buffer.numberOfChannels;
-    if (channels === 1) return buffer.getChannelData(0).slice();
-    var out = new Float32Array(n);
+    if (channels === 1) return buffer.getChannelData(0);
+    var out = new Float32Array(buffer.length);
     for (var c = 0; c < channels; c++) {
       var data = buffer.getChannelData(c);
-      for (var i = 0; i < n; i++) out[i] += data[i] / channels;
+      for (var i = 0; i < out.length; i++) out[i] += data[i] / channels;
     }
     return out;
   }
 
   // Index of the quietest 250 ms window between `from` and `to`.
-  function quietestPoint(samples, from, to) {
-    var win = Math.floor(RATE / 4);
+  function quietestPoint(samples, from, to, rate) {
+    var win = Math.floor(rate / 4);
     var best = to, bestEnergy = Infinity;
     for (var start = from; start + win <= to; start += Math.floor(win / 2)) {
       var e = 0;
@@ -56,7 +56,7 @@
     return best;
   }
 
-  function encodeWav(samples) {
+  function encodeWav(samples, rate) {
     var buffer = new ArrayBuffer(44 + samples.length * 2);
     var view = new DataView(buffer);
     function str(off, s) { for (var i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); }
@@ -67,8 +67,8 @@
     view.setUint32(16, 16, true);
     view.setUint16(20, 1, true); // PCM
     view.setUint16(22, 1, true); // mono
-    view.setUint32(24, RATE, true);
-    view.setUint32(28, RATE * 2, true);
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true);
     view.setUint16(32, 2, true);
     view.setUint16(34, 16, true);
     str(36, "data");
@@ -82,7 +82,9 @@
   }
 
   /**
-   * Returns { duration (seconds or null), chunks: [{ blob, name, type, start, end }] }.
+   * Returns { duration (seconds or null), chunks: [{ getBlob(), name, type, start, end }] }.
+   * WAV data for a chunk is only built when getBlob() is called, so a long recording
+   * never holds every encoded chunk in memory at once.
    */
   async function prepare(file) {
     var direct = file.size <= DIRECT_MAX && DIRECT_TYPES.test(file.name);
@@ -91,38 +93,48 @@
       buffer = await decode(await file.arrayBuffer());
     } catch (e) {
       if (direct) {
-        return { duration: null, chunks: [{ blob: file, name: file.name, type: file.type || "audio/mpeg", start: 0, end: null }] };
+        return { duration: null, chunks: [whole(file, null)] };
       }
       throw new Error("이 브라우저에서 오디오 파일을 읽지 못했습니다. MP3나 M4A로 변환해서 다시 올려 주세요.");
     }
 
     var duration = buffer.duration;
+    if (duration > 3 * 3600) {
+      throw new Error("녹음이 3시간보다 깁니다. 휴대폰이나 브라우저가 멈출 수 있으니 2시간 이하로 나눠서 올려 주세요.");
+    }
     // Small files the API accepts as-is: send the original (better quality, fewer requests).
     if (direct) {
-      return { duration: duration, chunks: [{ blob: file, name: file.name, type: file.type || "audio/mpeg", start: 0, end: duration }] };
+      return { duration: duration, chunks: [whole(file, duration)] };
     }
 
+    var rate = buffer.sampleRate || RATE;
     var samples = toMono(buffer);
     buffer = null;
     var chunks = [];
     var pos = 0;
-    var size = CHUNK_SEC * RATE;
+    var size = CHUNK_SEC * rate;
     while (pos < samples.length) {
       var end = Math.min(samples.length, pos + size);
-      if (end < samples.length) end = quietestPoint(samples, end - SEARCH_SEC * RATE, end);
+      if (end < samples.length) end = quietestPoint(samples, end - SEARCH_SEC * rate, end, rate);
       // Skip near-silent tails (< 1 s).
-      if (end - pos >= RATE) {
-        chunks.push({
-          blob: encodeWav(samples.subarray(pos, end)),
-          name: "chunk-" + (chunks.length + 1) + ".wav",
-          type: "audio/wav",
-          start: pos / RATE,
-          end: end / RATE,
-        });
-      }
+      if (end - pos >= rate) chunks.push(piece(samples, pos, end, rate, chunks.length + 1));
       pos = end;
     }
     return { duration: duration, chunks: chunks };
+  }
+
+  function whole(file, duration) {
+    return { getBlob: function () { return file; }, name: file.name, type: file.type || "audio/mpeg", start: 0, end: duration };
+  }
+
+  function piece(samples, from, to, rate, n) {
+    return {
+      getBlob: function () { return encodeWav(samples.subarray(from, to), rate); },
+      name: "chunk-" + n + ".wav",
+      type: "audio/wav",
+      start: from / rate,
+      end: to / rate,
+    };
   }
 
   window.AudioChunker = { prepare: prepare };

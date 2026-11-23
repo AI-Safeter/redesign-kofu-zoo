@@ -14,7 +14,7 @@ export async function POST(request) {
     return errorResponse(err.message || "잘못된 요청입니다.", err.status || 400);
   }
 
-  return ndjsonStream((send) =>
-    isMock() ? mockOutline(input.settings, send) : writeOutline({ ...input, onProgress: send }),
-  );
+  return ndjsonStream((send, signal) =>
+    isMock() ? mockOutline(input.settings, send) : writeOutline({ ...input, onProgress: send, signal }),
+  request);
 }

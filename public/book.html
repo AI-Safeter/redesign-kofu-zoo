@@ -25,6 +25,7 @@
       var id = params.get("id");
       var book = null;
       var editable = false;
+      var warned = false;
 
       if (params.has("sample") || id === "sample") {
         try {
@@ -49,12 +50,15 @@
         homeHref: "/",
         onChange: editable
           ? function (b) {
-              if (!Library.save(b)) alert("저장 공간이 부족해 변경 내용을 저장하지 못했습니다.");
+              if (!Library.save(b) && !warned) {
+                warned = true;
+                alert("브라우저 저장 공간이 부족해 고친 내용을 저장하지 못했습니다. ‘보기 설정 → HTML 파일로 저장’으로 책을 파일로 내려받아 두세요.");
+              }
             }
           : null,
         extraActions: [
           {
-            label: "저장",
+            label: "HTML 파일로 저장",
             title: "한 개의 HTML 파일로 내려받기 (가족에게 보내기 좋아요)",
             onClick: function () {
               Library.download(book).catch(function (e) {

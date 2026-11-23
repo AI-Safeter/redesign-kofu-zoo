@@ -39,12 +39,15 @@
 
   function save(book) {
     book.updatedAt = new Date().toISOString();
+    var current = read(INDEX) || [];
+    var wasListed = current.some(function (e) { return e.id === book.id; });
     if (!write(BOOK + book.id, book)) return false;
-    var idx = (read(INDEX) || []).filter(function (e) {
-      return e.id !== book.id;
-    });
+    var idx = current.filter(function (e) { return e.id !== book.id; });
     idx.push({ id: book.id, title: book.title, subtitle: book.subtitle, updatedAt: book.updatedAt, chapters: book.chapters.length });
-    return write(INDEX, idx);
+    if (write(INDEX, idx)) return true;
+    // A new book that is not in the index could never be listed or deleted: take it out again.
+    if (!wasListed) remove(BOOK + book.id);
+    return wasListed;
   }
 
   function get(id) {
