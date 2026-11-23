@@ -68,7 +68,7 @@
         return await fn();
       } catch (e) {
         if (attempt >= tries || e.fatal) throw e;
-        await new Promise(function (r) { setTimeout(r, 1500 * attempt); });
+        await new Promise(function (r) { setTimeout(r, 4000 * attempt); });
       }
     }
   }
@@ -396,7 +396,7 @@
             return streamCall("/api/chapter", Object.assign({ outline: job.outline, index: i }, payload), function (ev) {
               if (ev.type === "progress") step.set("active", ev.chars.toLocaleString() + "자");
             });
-          }, 2);
+          }, 3);
           job.chapters[i] = r.chapter;
           step.set("done", "");
         } catch (err) {
@@ -493,7 +493,7 @@
     $("access-field").hidden = !config.accessCodeRequired;
     var problems = [];
     if (!config.transcription) problems.push("음성 인식용 GROQ_API_KEY가 없어 오디오를 글로 옮길 수 없습니다. 녹취록을 직접 붙여넣어 주세요.");
-    if (!config.writing) problems.push("ANTHROPIC_API_KEY가 없어 책을 쓸 수 없습니다.");
+    if (!config.writing) problems.push("글쓰기용 API 키(ANTHROPIC_API_KEY 또는 OPENROUTER_API_KEY)가 없어 책을 쓸 수 없습니다.");
     if (config.mock) problems.push("모의(MOCK) 모드입니다. 실제 AI 대신 샘플 내용으로 동작합니다.");
     if (problems.length && $("notice").hidden) {
       showNotice(problems.map(function (p) { return "• " + p.replace(/[<>&]/g, ""); }).join("<br>"));
