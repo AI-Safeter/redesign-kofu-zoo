@@ -13,8 +13,8 @@ Browser                                   Vercel functions (api/)            Ext
 audio file ─▶ decode at 16 kHz mono,
               cut into ~100 s WAV chunks ─▶ /api/transcribe (per chunk) ─▶ Groq Whisper large-v3 (Korean, free tier)
 transcript (user reviews & fixes names)
-            ─▶ /api/outline ─────────────▶ Claude: title, chapter plan, prologue, timeline, epilogue
-            ─▶ /api/chapter × N (3 at once) ▶ Claude: each chapter's text + pull quote
+            ─▶ /api/outline ─────────────▶ Claude or a free OpenRouter model: title, chapter plan, prologue, timeline, epilogue
+            ─▶ /api/chapter × N (3 at once) ▶ same model: each chapter's text + pull quote
 book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit mode, font size,
                                    dark mode, print/PDF, download as one standalone .html file)
 ```
@@ -33,11 +33,14 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 
    | Name | Required | What for |
    |---|---|---|
-   | `ANTHROPIC_API_KEY` | yes | Writing the book (Claude). Get one at <https://platform.claude.com> |
+   | `ANTHROPIC_API_KEY` | one of these two | Writing the book with Claude (best quality, paid). <https://platform.claude.com> |
+   | `OPENROUTER_API_KEY` | one of these two | Writing the book with free models through OpenRouter, used when `ANTHROPIC_API_KEY` is not set. <https://openrouter.ai/keys> |
    | `GROQ_API_KEY` | for audio | Transcribing audio, free. Create a key at <https://console.groq.com/keys>. Without it, users can still paste a transcript |
    | `ACCESS_CODE` | recommended | If set, visitors must enter this code before the app calls the paid APIs |
    | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5` |
    | `CLAUDE_EFFORT` | no | `low` / `medium` / `high` (default) / `xhigh` / `max` |
+   | `OPENROUTER_MODELS` | no | Comma-separated models, tried in order. Default: `baidu/ernie-5.5-flash-preview:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`, `google/gemma-4-31b-it:free` |
+   | `WRITER_PROVIDER` | no | `anthropic` or `openrouter`, to choose when both keys are set |
    | `GROQ_TRANSCRIBE_MODEL` | no | Defaults to `whisper-large-v3` (`whisper-large-v3-turbo` is faster, slightly less accurate) |
    | `OPENAI_API_KEY` | no | Paid alternative to Groq for transcription; used only when `GROQ_API_KEY` is not set or `TRANSCRIBE_PROVIDER=openai` |
    | `OPENAI_TRANSCRIBE_MODEL` | no | Defaults to `whisper-1` |
@@ -48,7 +51,7 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 
 ## Rough cost per book
 
-For a 1-hour interview: transcription is free on Groq's free tier, which allows about 2 hours of audio per hour (7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. Writing is 1 outline call plus 5–8 chapter calls on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
+For a 1-hour interview: transcription is free on Groq's free tier, which allows about 2 hours of audio per hour (7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. With OpenRouter's free models, writing is free too (free models allow about 20 requests a minute; one book uses 6–9). Free models are good but noticeably weaker writers than Claude, and they are sometimes busy, in which case the next model in the list is used. With Claude, writing is 1 outline call plus 5–8 chapter calls on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
 
 ## Run locally
 
@@ -78,7 +81,8 @@ api/
   transcribe.js         one audio chunk → text (Groq, or OpenAI as a fallback)
   outline.js            transcript → book plan (Claude)
   chapter.js            transcript + plan → one chapter (Claude)
-  _lib/claude.js        prompts, JSON schemas, Claude calls
+  _lib/writer.js        prompts, JSON schemas, Claude calls, output clean-up
+  _lib/openrouter.js    OpenRouter (free models) calls
   _lib/http.js          access code, streaming responses, error messages
   _lib/mock.js          fake responses for MOCK_AI=1
 scripts/dev-server.js   local server that mimics Vercel's routing

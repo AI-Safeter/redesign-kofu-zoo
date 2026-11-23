@@ -1,21 +1,28 @@
-// Claude calls that turn an interview transcript into a life-chronicle e-book.
+// Turns an interview transcript into a life-chronicle e-book, with Claude (ANTHROPIC_API_KEY)
+// or, when only OPENROUTER_API_KEY is set, with free models through OpenRouter.
 // Two steps: plan the book (outline), then write each chapter in its own request.
 // Every request for one book shares the same system prompt + transcript, which is
 // marked for prompt caching so the transcript is billed in full only once or twice.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { callOpenRouter } from "./openrouter.js";
 
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 const EFFORT = process.env.CLAUDE_EFFORT || "high";
 const MAX_TRANSCRIPT_CHARS = 400_000;
 
+/** "anthropic", "openrouter", or null when no writing key is configured. */
+export function writingProvider() {
+  const wanted = (process.env.WRITER_PROVIDER || "").toLowerCase();
+  if (wanted === "openrouter" && process.env.OPENROUTER_API_KEY) return "openrouter";
+  if (wanted === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
+  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  if (process.env.OPENROUTER_API_KEY) return "openrouter";
+  return null;
+}
+
 let client;
 function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    const err = new Error("ANTHROPIC_API_KEY가 서버에 설정되지 않았습니다.");
-    err.status = 500;
-    throw err;
-  }
   client ??= new Anthropic();
   return client;
 }
@@ -86,7 +93,7 @@ function outlineRequest(settings) {
 - subjectName: the main character's name as it should appear in the book ("" if never mentioned and not given).
 - born: birth year and place if known, e.g. "1948년 충청남도 서천" ("" if unknown).
 - epigraph: one memorable sentence the interviewee actually said, to open the book.
-- prologue: 2–3 paragraphs that invite the reader into this life.
+- prologue: 2–3 paragraphs that introduce the person and the occasion of this interview and invite the reader in. Do not retell the life story in order; the chapters do that.
 - chapters: exactly ${settings.chapters}, in chronological order, together covering the whole life story told in the interview, each with distinct material. For each:
   - title: a chapter title (no "제1장" prefix).
   - period: the years or life stage it covers, e.g. "1948–1963" or "어린 시절".
@@ -174,6 +181,23 @@ export const CHAPTER_SCHEMA = {
 
 // ---------- Calls ----------
 
+async function callModel({ settings, transcript, userText, schema, schemaName, onProgress }) {
+  const provider = writingProvider();
+  if (!provider) {
+    throw Object.assign(new Error("글쓰기용 API 키(ANTHROPIC_API_KEY 또는 OPENROUTER_API_KEY)가 서버에 설정되지 않았습니다."), { status: 500 });
+  }
+  if (provider === "openrouter") {
+    return callOpenRouter({
+      system: `${systemPrompt(settings)}\n\n${transcriptBlock(transcript)}`,
+      userText,
+      schema,
+      schemaName,
+      onProgress,
+    });
+  }
+  return callClaude({ settings, transcript, userText, schema, onProgress });
+}
+
 async function callClaude({ settings, transcript, userText, schema, onProgress }) {
   const stream = getClient().beta.messages.stream({
     model: MODEL,
@@ -221,29 +245,75 @@ async function callClaude({ settings, transcript, userText, schema, onProgress }
 }
 
 export async function writeOutline({ settings, transcript, onProgress }) {
-  const { data, usage } = await callClaude({
+  const { data, usage } = await callModel({
     settings,
     transcript,
     userText: outlineRequest(settings),
     schema: OUTLINE_SCHEMA,
+    schemaName: "book_outline",
     onProgress,
   });
-  if (!Array.isArray(data.chapters) || data.chapters.length === 0) {
+  const outline = normalizeOutline(data);
+  if (outline.chapters.length === 0) {
     throw Object.assign(new Error("목차를 만들지 못했습니다. 다시 시도해 주세요."), { status: 500 });
   }
-  return { outline: data, usage };
+  return { outline, usage };
 }
 
 export async function writeChapter({ settings, transcript, outline, index, onProgress }) {
   if (!outline?.chapters?.[index]) {
     throw Object.assign(new Error("잘못된 장 번호입니다."), { status: 400 });
   }
-  const { data, usage } = await callClaude({
+  const { data, usage } = await callModel({
     settings,
     transcript,
     userText: chapterRequest(outline, index),
     schema: CHAPTER_SCHEMA,
+    schemaName: "book_chapter",
     onProgress,
   });
-  return { chapter: data, usage };
+  const chapter = normalizeChapter(data);
+  if (chapter.paragraphs.length === 0) {
+    throw Object.assign(new Error("이 장의 본문을 받지 못했습니다. 다시 시도해 주세요."), { status: 500 });
+  }
+  return { chapter, usage };
+}
+
+// ---------- Output clean-up ----------
+// Claude's structured outputs always match the schema; free models through OpenRouter
+// sometimes return a string where a list belongs, or leave a field out.
+
+const text = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
+
+function paragraphs(v) {
+  if (Array.isArray(v)) return v.map(text).filter(Boolean);
+  return text(v)
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+function normalizeOutline(d) {
+  d = d && typeof d === "object" ? d : {};
+  return {
+    title: text(d.title) || "나의 이야기",
+    subtitle: text(d.subtitle),
+    subjectName: text(d.subjectName),
+    born: text(d.born),
+    epigraph: text(d.epigraph),
+    prologue: paragraphs(d.prologue),
+    chapters: (Array.isArray(d.chapters) ? d.chapters : [])
+      .filter((c) => c && typeof c === "object" && text(c.title))
+      .map((c) => ({ title: text(c.title), period: text(c.period), summary: text(c.summary), notes: text(c.notes) })),
+    timeline: (Array.isArray(d.timeline) ? d.timeline : [])
+      .filter((t) => t && typeof t === "object" && text(t.event))
+      .map((t) => ({ when: text(t.when), event: text(t.event) })),
+    epilogue: paragraphs(d.epilogue),
+  };
+}
+
+function normalizeChapter(d) {
+  d = d && typeof d === "object" ? d : {};
+  const q = d.pullQuote && typeof d.pullQuote === "object" ? d.pullQuote : { text: d.pullQuote };
+  return { paragraphs: paragraphs(d.paragraphs), pullQuote: { text: text(q.text), context: text(q.context) } };
 }
