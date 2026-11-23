@@ -322,7 +322,8 @@
       ["인터뷰", [s.interviewDate, s.interviewPlace].filter(Boolean).join(", ")],
       ["녹음", m.audioSeconds ? Math.round(m.audioSeconds / 60) + "분" : ""],
       ["녹취록", m.transcriptChars ? m.transcriptChars.toLocaleString("ko-KR") + "자" : ""],
-      ["만든 날", book.createdAt ? new Date(book.createdAt).toLocaleDateString("ko-KR") : ""],
+      ["만든 날", book.createdAt && !m.origin ? new Date(book.createdAt).toLocaleDateString("ko-KR") : ""],
+      ["글쓴 AI", (m.models || []).join(", ")],
     ].filter(function (r) { return r[1]; });
 
     var dl = el("dl", { className: "colophon__facts" });
@@ -334,8 +335,9 @@
     var colophon = el("footer", { className: "colophon" }, [
       txt("p", "colophon__title", book.title, null),
       dl,
-      el("p", { text: "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 쓰고 가족이 다듬었습니다. ‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." }),
-      book.sample ? el("p", { text: "이 책은 앱 시연을 위한 샘플이며, 등장인물은 가상의 인물입니다." }) : null,
+      // How the book was made: the sample says so itself; generated books get the standard line.
+      el("p", { text: m.origin || "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 썼습니다. 인용은 녹취록과 대조했습니다." }),
+      el("p", { text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." }),
     ]);
     colophon.firstChild.removeAttribute("data-path");
 
