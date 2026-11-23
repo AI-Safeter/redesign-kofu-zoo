@@ -1,65 +1,88 @@
 /*
- * Builder page: audio → transcript → outline → chapters → saved book.
+ * Builder page: audio → transcript (reviewed by the user) → outline → chapters → saved book.
+ * A book in progress is saved after every step, so a reload or a failed chapter never
+ * throws away work that is already done.
  */
 (function () {
   "use strict";
 
   var $ = function (id) { return document.getElementById(id); };
   var DRAFT_KEY = "chronicle:draft";
+  var JOB_KEY = "chronicle:job";
   var ACCESS_KEY = "chronicle:access";
   var CHAPTER_CONCURRENCY = 3;
-  var TRANSCRIBE_CONCURRENCY = 2; // Groq free tier allows ~20 requests/minute
+  var TRANSCRIBE_CONCURRENCY = 2; // Groq's free tier allows ~20 requests a minute
 
   var config = { accessCodeRequired: false, transcription: true, writing: true };
   var audioFile = null;
   var busy = false;
+  var tx = null; // the current transcription: { file, prepared, texts }
+  var job = null; // the current book: { id, transcript, settings, outline, chapters, models, startedAt }
 
-  // ---------- Helpers ----------
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+  // ---------- Small helpers ----------
 
   function sget(store, key) { try { return store.getItem(key); } catch (e) { return null; } }
-  function sset(store, key, v) { try { store.setItem(key, v); } catch (e) {} }
+  function sset(store, key, v) { try { store.setItem(key, v); return true; } catch (e) { return false; } }
+  function sdel(store, key) { try { store.removeItem(key); } catch (e) {} }
 
   function headers(extra) {
     var h = Object.assign({}, extra || {});
     var code = $("access").value.trim();
-    if (code) h["x-access-code"] = code;
+    if (code) h["x-access-code"] = encodeURIComponent(code); // header values must be ASCII
     return h;
   }
 
-  function showNotice(html) {
+  function showNotice(lines) {
     var n = $("notice");
-    n.innerHTML = html;
-    n.hidden = false;
+    n.textContent = "";
+    lines.forEach(function (l) {
+      var p = document.createElement("p");
+      p.textContent = l;
+      n.appendChild(p);
+    });
+    n.hidden = lines.length === 0;
   }
 
   function formatDuration(sec) {
     if (!sec && sec !== 0) return "";
     var m = Math.floor(sec / 60), s = Math.round(sec % 60);
     if (m >= 60) return Math.floor(m / 60) + "시간 " + (m % 60) + "분";
-    return m + "분 " + s + "초";
+    return m ? m + "분 " + s + "초" : s + "초";
   }
 
   async function readError(res) {
     try {
       var data = await res.json();
-      return data.error || ("오류 " + res.status);
-    } catch (e) {
-      return res.status === 413 ? "보낸 데이터가 너무 큽니다." : "서버 오류 (" + res.status + ")";
-    }
+      if (data.error) return data.error;
+    } catch (e) {}
+    if (res.status === 413) return "보낸 데이터가 너무 큽니다.";
+    if (res.status === 401) return "접근 코드가 올바르지 않습니다.";
+    return "일시적인 서버 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.";
   }
 
-  // Runs `worker(item, index)` over items with limited parallelism.
+  /**
+   * Runs `worker(item, index)` over items with limited parallelism. After the first
+   * failure no new items start; items already running finish. Rejects with that failure.
+   */
   async function pool(items, limit, worker) {
     var next = 0;
+    var failure = null;
     async function lane() {
-      while (next < items.length) {
+      while (next < items.length && !failure) {
         var i = next++;
-        await worker(items[i], i);
+        try {
+          await worker(items[i], i);
+        } catch (e) {
+          failure = failure || e;
+        }
       }
     }
     var lanes = [];
     for (var k = 0; k < Math.min(limit, items.length); k++) lanes.push(lane());
     await Promise.all(lanes);
+    if (failure) throw failure;
   }
 
   async function withRetry(fn, tries) {
@@ -68,18 +91,23 @@
         return await fn();
       } catch (e) {
         if (attempt >= tries || e.fatal) throw e;
-        await new Promise(function (r) { setTimeout(r, 4000 * attempt); });
+        await sleep(4000 * attempt);
       }
     }
   }
 
   // POSTs JSON and reads the newline-delimited JSON event stream the server sends back.
   async function streamCall(url, body, onEvent) {
-    var res = await fetch(url, {
-      method: "POST",
-      headers: headers({ "content-type": "application/json" }),
-      body: JSON.stringify(body),
-    });
+    var res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: headers({ "content-type": "application/json" }),
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      throw new Error("인터넷 연결이 끊겼습니다. 연결을 확인한 뒤 다시 시도해 주세요.");
+    }
     if (!res.ok) {
       var err = new Error(await readError(res));
       err.fatal = res.status === 400 || res.status === 401;
@@ -89,19 +117,26 @@
     var decoder = new TextDecoder();
     var buf = "";
     var result;
-    for (;;) {
-      var chunk = await reader.read();
-      if (chunk.done) break;
-      buf += decoder.decode(chunk.value, { stream: true });
-      var lines = buf.split("\n");
-      buf = lines.pop();
-      for (var i = 0; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        var ev = JSON.parse(lines[i]);
-        if (ev.type === "done") result = ev.result;
-        else if (ev.type === "error") throw new Error(ev.message);
-        else if (onEvent) onEvent(ev);
+    try {
+      for (;;) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        var lines = buf.split("\n");
+        buf = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          if (!lines[i].trim()) continue;
+          var ev = JSON.parse(lines[i]);
+          if (ev.type === "done") result = ev.result;
+          else if (ev.type === "error") throw new Error(ev.message);
+          else if (onEvent) onEvent(ev);
+        }
       }
+    } catch (e) {
+      if (e instanceof SyntaxError || /network|fetch|load/i.test(e.message)) {
+        throw new Error("서버 연결이 끊겼습니다. 다시 시도해 주세요.");
+      }
+      throw e;
     }
     if (!result) throw new Error("서버 연결이 끊겼습니다. 다시 시도해 주세요.");
     return result;
@@ -127,60 +162,43 @@
       meta.textContent = b.chapters + "장 · " + new Date(b.updatedAt).toLocaleDateString("ko-KR");
       a.append(name, meta);
 
+      var actions = document.createElement("div");
+      actions.className = "library__actions";
       var dl = document.createElement("button");
       dl.type = "button";
       dl.className = "btn";
-      dl.textContent = "HTML 저장";
+      dl.textContent = "파일로 저장";
       dl.addEventListener("click", function () {
         var book = Library.get(b.id);
-        if (book) Library.download(book).catch(function (e) { alert(e.message); });
+        if (book) Library.download(book).catch(function (e) { showNotice([e.message]); });
       });
-
       var del = document.createElement("button");
       del.type = "button";
       del.className = "btn btn--danger";
       del.textContent = "삭제";
       del.setAttribute("aria-label", b.title + " 삭제");
       del.addEventListener("click", function () {
-        if (confirm("'" + b.title + "' 책을 삭제할까요? 되돌릴 수 없습니다.")) {
+        if (confirm("‘" + b.title + "’ 책을 삭제할까요? 되돌릴 수 없습니다.")) {
           Library.remove(b.id);
           renderLibrary();
         }
       });
-      li.append(a, dl, del);
+      actions.append(dl, del);
+      li.append(a, actions);
       ul.appendChild(li);
     });
   }
 
-  // ---------- Tabs ----------
-
-  function selectTab(which) {
-    var audio = which === "audio";
-    $("tab-audio").setAttribute("aria-selected", audio);
-    $("tab-text").setAttribute("aria-selected", !audio);
-    $("tab-audio").tabIndex = audio ? 0 : -1;
-    $("tab-text").tabIndex = audio ? -1 : 0;
-    $("panel-audio").hidden = !audio;
-    $("panel-text").hidden = audio;
-  }
-  $("tab-audio").addEventListener("click", function () { selectTab("audio"); });
-  $("tab-text").addEventListener("click", function () { selectTab("text"); });
-  document.querySelector(".tabs").addEventListener("keydown", function (e) {
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      var toText = $("tab-audio").getAttribute("aria-selected") === "true";
-      selectTab(toText ? "text" : "audio");
-      $(toText ? "tab-text" : "tab-audio").focus();
-    }
-  });
-
-  // ---------- Audio selection ----------
+  // ---------- Step 1: audio ----------
 
   function setFile(file) {
     if (!file) return;
     audioFile = file;
+    tx = null;
     var mb = (file.size / 1024 / 1024).toFixed(1);
     $("file-info").textContent = "선택한 파일: " + file.name + " (" + mb + "MB)";
     $("file-info").hidden = false;
+    $("transcribe-progress").hidden = true;
     $("transcribe-btn").disabled = busy || !config.transcription;
   }
 
@@ -196,19 +214,21 @@
     var f = e.dataTransfer.files[0];
     if (f) setFile(f);
   });
+  if (window.matchMedia && matchMedia("(pointer: coarse)").matches) {
+    $("dropzone-main").textContent = "눌러서 녹음 파일 고르기";
+  }
 
-  // ---------- Transcription ----------
-
-  function setTranscribeProgress(fraction, label) {
+  function setTranscribeProgress(fraction, label, isError) {
     var box = $("transcribe-progress");
     box.hidden = false;
-    box.querySelector(".progress__bar span").style.width = Math.round(fraction * 100) + "%";
+    box.classList.toggle("is-error", !!isError);
+    var bar = box.querySelector(".progress__bar");
+    bar.setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
+    bar.querySelector("span").style.width = Math.round(fraction * 100) + "%";
     box.querySelector(".progress__label").textContent = label;
   }
 
-  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-
-  // Sends one chunk; waits out rate limits (429 + retryAfter) and retries transient errors.
+  // Sends one chunk; waits out rate limits (429 + retryAfter) and retries short outages.
   async function transcribeChunk(chunk, i, hint, onWait) {
     var url = "/api/transcribe?index=" + i + "&name=" + encodeURIComponent(chunk.name) +
       (hint ? "&hint=" + encodeURIComponent(hint) : "");
@@ -219,10 +239,10 @@
         res = await fetch(url, {
           method: "POST",
           headers: headers({ "content-type": chunk.type || "audio/wav" }),
-          body: chunk.blob,
+          body: chunk.getBlob(),
         });
       } catch (e) {
-        if (++failures >= 3) throw new Error("네트워크 오류로 음성 인식에 실패했습니다.");
+        if (++failures >= 3) throw new Error("인터넷 연결이 끊겨 받아쓰기를 마치지 못했습니다.");
         await sleep(1500 * failures);
         continue;
       }
@@ -234,7 +254,7 @@
         await sleep(data.retryAfter * 1000);
         continue;
       }
-      var err = new Error(data.error || "서버 오류 (" + res.status + ")");
+      var err = new Error(data.error || "받아쓰기 서버에 문제가 생겼습니다.");
       if ([401, 413, 500].indexOf(res.status) >= 0 || ++failures >= 3) throw err;
       await sleep(1500 * failures);
     }
@@ -244,38 +264,40 @@
     if (!audioFile || busy) return;
     busy = true;
     $("transcribe-btn").disabled = true;
+    $("transcribe-retry").hidden = true;
     $("make-btn").disabled = true;
     try {
-      setTranscribeProgress(0.02, "녹음 파일을 준비하는 중… (긴 녹음은 1분 정도 걸릴 수 있어요)");
-      var prepared = await AudioChunker.prepare(audioFile);
-      var chunks = prepared.chunks;
-      var texts = new Array(chunks.length);
-      var done = 0;
+      if (!tx || tx.file !== audioFile) {
+        setTranscribeProgress(0.02, "녹음 파일을 준비하는 중… (긴 녹음은 1분 정도 걸릴 수 있어요)");
+        tx = { file: audioFile, prepared: await AudioChunker.prepare(audioFile), texts: [] };
+      }
+      var chunks = tx.prepared.chunks;
       var hint = $("hint").value.trim();
-      var lengthNote = prepared.duration ? " · 녹음 길이 " + formatDuration(prepared.duration) : "";
-      setTranscribeProgress(0.05, "음성을 글로 옮기는 중… 0/" + chunks.length + lengthNote);
+      var lengthNote = tx.prepared.duration ? " · 녹음 길이 " + formatDuration(tx.prepared.duration) : "";
+      var done = tx.texts.filter(function (t) { return t != null; }).length;
+      var todo = [];
+      chunks.forEach(function (c, i) { if (tx.texts[i] == null) todo.push(i); });
+      var progress = function (extra) {
+        setTranscribeProgress(0.05 + 0.95 * (done / chunks.length), (extra || "음성을 글로 옮기는 중… ") + done + "/" + chunks.length + lengthNote);
+      };
+      progress();
 
-      await pool(chunks, TRANSCRIBE_CONCURRENCY, async function (chunk, i) {
-        texts[i] = await transcribeChunk(chunk, i, hint, function (sec) {
-          setTranscribeProgress(0.05 + 0.95 * (done / chunks.length),
-            "무료 사용량 한도에 걸려 " + sec + "초 기다리는 중… " + done + "/" + chunks.length + lengthNote);
+      await pool(todo, TRANSCRIBE_CONCURRENCY, async function (i) {
+        tx.texts[i] = await transcribeChunk(chunks[i], i, hint, function (sec) {
+          progress("무료 사용량 한도로 " + sec + "초 기다리는 중… ");
         });
         done++;
-        setTranscribeProgress(0.05 + 0.95 * (done / chunks.length), "음성을 글로 옮기는 중… " + done + "/" + chunks.length + lengthNote);
+        progress();
       });
 
-      var text = texts.filter(Boolean).join("\n\n");
-      var box = $("transcript");
-      box.value = box.value.trim() ? box.value.trim() + "\n\n" + text : text;
-      onTranscriptInput();
-      setTranscribeProgress(1, "완료! 녹취록 " + text.length.toLocaleString() + "자");
-      $("review-note").hidden = false;
-      selectTab("text");
-      box.focus();
-      box.setSelectionRange(0, 0);
-      box.scrollTop = 0;
+      var text = tx.texts.filter(Boolean).join("\n\n");
+      setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자. 아래 2단계에서 확인해 주세요.");
+      deliverTranscript(text);
+      tx.done = true;
     } catch (e) {
-      setTranscribeProgress(0, "실패: " + e.message);
+      var got = tx ? tx.texts.filter(function (t) { return t != null; }).length : 0;
+      setTranscribeProgress(0, "받아쓰기를 마치지 못했습니다: " + e.message + (got ? " (" + got + "개 부분은 받아 두었어요)" : ""), true);
+      $("transcribe-retry").hidden = !tx;
     } finally {
       busy = false;
       $("transcribe-btn").disabled = !audioFile || !config.transcription;
@@ -283,21 +305,133 @@
     }
   }
   $("transcribe-btn").addEventListener("click", transcribe);
+  $("transcribe-retry").addEventListener("click", transcribe);
 
-  // ---------- Transcript draft ----------
+  // ---------- Step 2: transcript ----------
+
+  var pendingText = null;
+  function deliverTranscript(text) {
+    var box = $("transcript");
+    if (box.value.trim()) {
+      pendingText = text;
+      $("merge-choice").hidden = false;
+      $("merge-choice").scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    box.value = text;
+    afterTranscript();
+  }
+  function afterTranscript() {
+    onTranscriptInput();
+    $("merge-choice").hidden = true;
+    $("step2-title").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  $("merge-replace").addEventListener("click", function () {
+    $("transcript").value = pendingText || "";
+    pendingText = null;
+    afterTranscript();
+  });
+  $("merge-append").addEventListener("click", function () {
+    $("transcript").value = $("transcript").value.trim() + "\n\n" + (pendingText || "");
+    pendingText = null;
+    afterTranscript();
+  });
 
   var draftTimer;
   function onTranscriptInput() {
     var v = $("transcript").value;
-    $("transcript-count").textContent = v.length.toLocaleString() + "자" + (v.length && v.length < 200 ? " (200자 이상 필요)" : "");
+    $("transcript-count").textContent = v.length.toLocaleString() + "자" + (v.length && v.length < 200 ? " · 책을 만들려면 200자 이상 필요해요" : "");
     clearTimeout(draftTimer);
     draftTimer = setTimeout(function () { sset(localStorage, DRAFT_KEY, v); }, 500);
   }
   $("transcript").addEventListener("input", onTranscriptInput);
 
-  // ---------- Generation ----------
+  $("replace-btn").addEventListener("click", function () {
+    var from = $("replace-from").value;
+    var to = $("replace-to").value;
+    var box = $("transcript");
+    if (!from) {
+      $("replace-result").textContent = "바꿀 말을 먼저 적어 주세요.";
+      return;
+    }
+    var count = box.value.split(from).length - 1;
+    if (!count) {
+      $("replace-result").textContent = "‘" + from + "’을(를) 찾지 못했어요.";
+      return;
+    }
+    box.value = box.value.split(from).join(to);
+    onTranscriptInput();
+    $("replace-result").textContent = "‘" + from + "’ " + count + "곳을 ‘" + to + "’(으)로 바꿨어요.";
+    $("replace-from").value = "";
+    $("replace-to").value = "";
+  });
 
-  var job = null; // kept so failed chapters can be retried
+  // ---------- Step 3 → generation ----------
+
+  function settingsFromForm() {
+    return {
+      subjectName: $("subject").value.trim(),
+      interviewer: $("interviewer").value.trim(),
+      interviewDate: $("date").value.trim(),
+      interviewPlace: $("place").value.trim(),
+      voice: document.querySelector('input[name="voice"]:checked').value,
+      chapters: parseInt($("chapters").value, 10),
+      notes: $("notes").value.trim(),
+    };
+  }
+
+  function showError(msg) {
+    $("make-error").textContent = msg || "";
+    $("make-error").hidden = !msg;
+  }
+
+  function saveJob() {
+    if (!job) return;
+    var copy = Object.assign({}, job);
+    delete copy.steps;
+    if (!sset(localStorage, JOB_KEY, JSON.stringify(copy))) {
+      // Storage full: keep going without the safety copy.
+    }
+  }
+  function dropJob() {
+    job = null;
+    sdel(localStorage, JOB_KEY);
+  }
+
+  async function startGeneration(e) {
+    e.preventDefault();
+    if (busy) return;
+    showError("");
+    var transcript = $("transcript").value.trim();
+    if (transcript.length < 200) {
+      showError("2단계의 녹취록이 필요합니다. 녹음을 글로 옮기거나 녹취록을 붙여넣어 주세요 (200자 이상).");
+      $("transcript").setAttribute("aria-invalid", "true");
+      $("transcript").focus();
+      return;
+    }
+    $("transcript").removeAttribute("aria-invalid");
+    if (config.accessCodeRequired && !$("access").value.trim()) {
+      showError("접근 코드를 입력해 주세요.");
+      $("access").focus();
+      return;
+    }
+    sset(sessionStorage, ACCESS_KEY, $("access").value.trim());
+
+    job = {
+      id: Library.newId(),
+      transcript: transcript,
+      settings: settingsFromForm(),
+      outline: null,
+      chapters: [],
+      models: [],
+      audioSeconds: tx && tx.done && tx.prepared.duration ? Math.round(tx.prepared.duration) : null,
+      startedAt: Date.now(),
+    };
+    saveJob();
+    await runJob();
+  }
+
+  // ----- Progress display -----
 
   function stepItem(label) {
     var li = document.createElement("li");
@@ -305,7 +439,6 @@
     li.querySelector(".label").textContent = label;
     $("make-steps").appendChild(li);
     return {
-      li: li,
       set: function (state, meta) {
         li.className = state ? "is-" + state : "";
         if (meta !== undefined) li.querySelector(".meta").textContent = meta;
@@ -314,154 +447,201 @@
     };
   }
 
-  function settingsFromForm() {
-    return {
-      subjectName: $("subject").value.trim(),
-      interviewDate: $("date").value.trim(),
-      voice: document.querySelector('input[name="voice"]:checked').value,
-      chapters: parseInt($("chapters").value, 10),
-      notes: $("notes").value.trim(),
-    };
-  }
-
-  function showError(msg) {
-    $("make-error").textContent = msg;
-    $("make-error").hidden = !msg;
-  }
-
-  async function startGeneration(e) {
-    e.preventDefault();
-    if (busy) return;
-    var transcript = $("transcript").value.trim();
-    if (transcript.length < 200) {
-      selectTab("text");
-      $("transcript").focus();
-      alert("녹취록이 필요합니다. 녹음을 글로 옮기거나 녹취록을 붙여넣어 주세요 (200자 이상).");
-      return;
-    }
-    if (config.accessCodeRequired && !$("access").value.trim()) {
-      $("access").focus();
-      alert("접근 코드를 입력해 주세요.");
-      return;
-    }
-    sset(sessionStorage, ACCESS_KEY, $("access").value.trim());
-
-    job = { id: Library.newId(), transcript: transcript, settings: settingsFromForm(), outline: null, chapters: [] };
+  function renderSteps() {
     $("make-steps").textContent = "";
-    job.outlineStep = stepItem("이야기의 흐름을 읽고 목차를 짜는 중");
-    await runJob();
+    job.steps = { outline: stepItem("이야기의 흐름을 읽고 목차를 짜는 중"), chapters: [] };
+    if (job.outline) {
+      job.steps.outline.set("done", "");
+      job.steps.outline.label("목차 완성: 《" + job.outline.title + "》");
+      job.steps.chapters = job.outline.chapters.map(function (c, i) {
+        var s = stepItem("제" + (i + 1) + "장 " + c.title);
+        if (job.chapters[i]) s.set("done", "");
+        return s;
+      });
+    }
+  }
+
+  function updateOverall(status) {
+    var total = 1 + (job.outline ? job.outline.chapters.length : 6);
+    var done = (job.outline ? 1 : 0) + job.chapters.filter(Boolean).length;
+    var pct = Math.round((done / total) * 100);
+    $("overall-bar").style.width = pct + "%";
+    $("overall-bar").parentNode.setAttribute("aria-valuenow", String(pct));
+    if (status) $("overall-status").textContent = status;
+    var eta = "";
+    if (done > 0 && done < total && job.runStarted) {
+      var per = (Date.now() - job.runStarted) / Math.max(1, done - job.doneAtStart);
+      var left = Math.ceil(((total - done) * per) / CHAPTER_CONCURRENCY / 60000);
+      if (isFinite(left) && left > 0) eta = " · 약 " + left + "분 남음";
+    }
+    $("overall-eta").textContent = eta;
+  }
+
+  // ----- The run -----
+
+  var wakeLock = null;
+  async function keepAwake(on) {
+    try {
+      if (on && navigator.wakeLock && !wakeLock) wakeLock = await navigator.wakeLock.request("screen");
+      if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+    } catch (e) { wakeLock = null; }
+  }
+
+  function setBusyUi(on) {
+    busy = on;
+    $("form-fields").disabled = on;
+    $("make-btn").hidden = on || (job && job.failed);
+    $("make-hint").hidden = on || (job && job.failed);
+    $("retry-btn").hidden = on || !(job && job.failed);
+    $("restart-btn").hidden = on || !(job && job.failed);
+    $("make-progress").hidden = !job;
+    keepAwake(on);
   }
 
   async function runJob() {
-    busy = true;
-    $("make-btn").disabled = true;
-    $("transcribe-btn").disabled = true;
-    $("retry-btn").hidden = true;
-    $("make-progress").hidden = false;
+    job.failed = false;
+    setBusyUi(true);
     showError("");
-    var started = Date.now();
-    var timer = setInterval(function () {
-      var s = Math.round((Date.now() - started) / 1000);
-      $("make-btn").textContent = "만드는 중… " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-    }, 1000);
+    renderSteps();
+    job.runStarted = Date.now();
+    job.doneAtStart = (job.outline ? 1 : 0) + job.chapters.filter(Boolean).length;
+    $("make-progress").scrollIntoView({ behavior: "smooth", block: "start" });
+    var ticker = setInterval(function () { updateOverall(); }, 5000);
 
     var payload = { transcript: job.transcript, settings: job.settings };
     try {
       // 1) Outline
       if (!job.outline) {
-        job.outlineStep.set("active", "");
+        job.steps.outline.set("active", "읽는 중");
+        updateOverall("목차를 짜고 있어요");
         var res = await withRetry(function () {
           return streamCall("/api/outline", payload, function (ev) {
-            if (ev.type === "progress") job.outlineStep.set("active", ev.chars.toLocaleString() + "자");
+            if (ev.type === "progress") job.steps.outline.set("active", "쓰는 중");
           });
         }, 2);
         job.outline = res.outline;
-        job.outlineStep.set("done", "");
-        job.outlineStep.label("목차 완성: 《" + job.outline.title + "》");
-        job.chapterSteps = job.outline.chapters.map(function (c, i) {
-          return stepItem("제" + (i + 1) + "장 " + c.title);
-        });
+        if (res.model) job.models.push(res.model);
         job.chapters = new Array(job.outline.chapters.length);
+        saveJob();
+        renderSteps();
       }
 
-      // 2) Chapters (only the ones not written yet)
+      // 2) Chapters not written yet
       var todo = [];
       job.outline.chapters.forEach(function (c, i) { if (!job.chapters[i]) todo.push(i); });
+      updateOverall("장을 쓰고 있어요");
       var failures = [];
-      await pool(todo, CHAPTER_CONCURRENCY, async function (i) {
-        var step = job.chapterSteps[i];
-        step.set("active", "쓰는 중");
-        try {
-          var r = await withRetry(function () {
-            return streamCall("/api/chapter", Object.assign({ outline: job.outline, index: i }, payload), function (ev) {
-              if (ev.type === "progress") step.set("active", ev.chars.toLocaleString() + "자");
-            });
-          }, 3);
-          job.chapters[i] = r.chapter;
-          step.set("done", "");
-        } catch (err) {
-          failures.push(err.message);
-          step.set("failed", "실패");
+      var next = 0;
+      async function lane() {
+        while (next < todo.length) {
+          var i = todo[next++];
+          var step = job.steps.chapters[i];
+          step.set("active", "쓰는 중");
+          try {
+            var r = await withRetry(function () {
+              return streamCall("/api/chapter", Object.assign({ outline: job.outline, index: i }, payload));
+            }, 3);
+            job.chapters[i] = r.chapter;
+            if (r.model) job.models.push(r.model);
+            saveJob();
+            step.set("done", "");
+            updateOverall("제" + (i + 1) + "장을 마쳤어요");
+          } catch (err) {
+            failures.push({ i: i, message: err.message });
+            step.set("failed", "다시 시도 필요");
+          }
         }
-      });
+      }
+      var lanes = [];
+      for (var k = 0; k < Math.min(CHAPTER_CONCURRENCY, todo.length); k++) lanes.push(lane());
+      await Promise.all(lanes);
 
       if (failures.length) {
-        showError(failures.length + "개 장을 쓰지 못했습니다: " + failures[0]);
-        $("retry-btn").hidden = false;
+        job.failed = true;
+        var written = job.chapters.filter(Boolean).length;
+        showError(
+          failures.map(function (f) { return "제" + (f.i + 1) + "장"; }).join(", ") + "을 쓰지 못했어요. " +
+          (written ? "이미 쓴 " + written + "개 장은 그대로 있어요. " : "") +
+          "‘이어서 쓰기’를 누르면 남은 부분만 다시 씁니다. (" + failures[0].message + ")"
+        );
+        updateOverall("잠시 멈췄어요");
         return;
       }
 
       // 3) Assemble and save
-      var o = job.outline;
-      var book = {
-        id: job.id,
-        createdAt: new Date().toISOString(),
-        settings: job.settings,
-        title: o.title,
-        subtitle: o.subtitle,
-        subjectName: o.subjectName || job.settings.subjectName,
-        born: o.born,
-        epigraph: o.epigraph,
-        prologue: o.prologue,
-        chapters: o.chapters.map(function (c, i) {
-          return {
-            title: c.title,
-            period: c.period,
-            summary: c.summary,
-            paragraphs: job.chapters[i].paragraphs,
-            pullQuote: job.chapters[i].pullQuote,
-          };
-        }),
-        timeline: o.timeline,
-        epilogue: o.epilogue,
-      };
+      var book = assemble();
       if (!Library.save(book)) {
-        // Storage full: still let the user keep the result.
-        showError("브라우저 저장 공간이 부족합니다. 책을 HTML 파일로 내려받습니다.");
+        showError("브라우저 저장 공간이 부족합니다. 책을 파일로 내려받습니다.");
         await Library.download(book);
         return;
       }
-      Library.saveTranscript(book.id, job.transcript);
+      if (job.transcript.length < 150000) Library.saveTranscript(book.id, job.transcript);
       sset(localStorage, DRAFT_KEY, "");
-      var done = stepItem("완성! 책을 펼칩니다");
-      done.set("done", "");
+      updateOverall("완성! 책을 펼칩니다");
+      $("overall-bar").style.width = "100%";
+      dropJob();
       setTimeout(function () { location.href = "/book?id=" + encodeURIComponent(book.id); }, 700);
     } catch (err) {
-      if (job.outlineStep && !job.outline) job.outlineStep.set("failed", "실패");
+      job.failed = true;
+      if (!job.outline) job.steps.outline.set("failed", "다시 시도 필요");
       showError(err.message);
-      $("retry-btn").hidden = false;
+      updateOverall("잠시 멈췄어요");
     } finally {
-      clearInterval(timer);
-      busy = false;
-      $("make-btn").textContent = "전자책 만들기";
-      $("make-btn").disabled = !config.writing;
-      $("transcribe-btn").disabled = !audioFile || !config.transcription;
+      clearInterval(ticker);
+      if (job) saveJob();
+      setBusyUi(false);
+      if (job && job.failed) $("retry-btn").focus();
     }
   }
 
+  function assemble() {
+    var o = job.outline;
+    return {
+      id: job.id,
+      createdAt: new Date().toISOString(),
+      settings: job.settings,
+      meta: {
+        audioSeconds: job.audioSeconds,
+        transcriptChars: job.transcript.length,
+        models: job.models.filter(function (m, i, a) { return m && a.indexOf(m) === i; }),
+      },
+      title: o.title,
+      subtitle: o.subtitle,
+      subjectName: o.subjectName || job.settings.subjectName,
+      birthYear: o.birthYear,
+      birthplace: o.birthplace,
+      epigraph: o.epigraph,
+      people: o.people,
+      prologue: o.prologue,
+      chapters: o.chapters.map(function (c, i) {
+        var w = job.chapters[i];
+        return {
+          title: c.title,
+          yearFrom: c.yearFrom,
+          yearTo: c.yearTo,
+          place: c.place,
+          summary: c.summary,
+          paragraphs: w.paragraphs,
+          pullQuote: w.pullQuote,
+          excerpt: w.excerpt,
+          unverified: w.unverified || [],
+        };
+      }),
+      lastWords: o.lastWords,
+      timeline: o.timeline,
+      epilogue: o.epilogue,
+    };
+  }
+
   $("builder").addEventListener("submit", startGeneration);
-  $("retry-btn").addEventListener("click", function () {
-    if (job && !busy) runJob();
+  $("retry-btn").addEventListener("click", function () { if (job && !busy) runJob(); });
+  $("restart-btn").addEventListener("click", function () {
+    if (busy) return;
+    if (!confirm("지금까지 쓴 내용을 버리고 처음부터 다시 만들까요?")) return;
+    dropJob();
+    $("make-progress").hidden = true;
+    showError("");
+    setBusyUi(false);
   });
 
   window.addEventListener("beforeunload", function (e) {
@@ -473,13 +653,50 @@
 
   // ---------- Init ----------
 
+  function restoreSavedWork() {
+    var saved = null;
+    try { saved = JSON.parse(sget(localStorage, JOB_KEY) || "null"); } catch (e) {}
+    if (saved && saved.outline) {
+      var done = (saved.chapters || []).filter(Boolean).length;
+      $("resume-text").textContent = "만들던 책 《" + saved.outline.title + "》이 있어요 (" + done + "/" + saved.outline.chapters.length + "장 완료). 이어서 쓸까요?";
+      $("resume").hidden = false;
+      $("resume-go").onclick = function () {
+        $("resume").hidden = true;
+        job = saved;
+        job.chapters = job.chapters || [];
+        job.models = job.models || [];
+        $("transcript").value = job.transcript;
+        onTranscriptInput();
+        runJob();
+      };
+      $("resume-drop").onclick = function () {
+        $("resume").hidden = true;
+        dropJob();
+      };
+      return;
+    }
+    var draft = sget(localStorage, DRAFT_KEY);
+    if (draft && draft.trim()) {
+      $("resume-text").textContent = "작성 중이던 녹취록(" + draft.length.toLocaleString() + "자)이 있어요. 이어서 할까요?";
+      $("resume-go").textContent = "이어서 하기";
+      $("resume-drop").textContent = "지우기";
+      $("resume").hidden = false;
+      $("resume-go").onclick = function () {
+        $("resume").hidden = true;
+        $("transcript").value = draft;
+        onTranscriptInput();
+        $("step2-title").scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      $("resume-drop").onclick = function () {
+        $("resume").hidden = true;
+        sdel(localStorage, DRAFT_KEY);
+      };
+    }
+  }
+
   async function init() {
     renderLibrary();
-    var draft = sget(localStorage, DRAFT_KEY);
-    if (draft) {
-      $("transcript").value = draft;
-      onTranscriptInput();
-    }
+    restoreSavedWork();
     $("access").value = sget(sessionStorage, ACCESS_KEY) || "";
 
     try {
@@ -488,17 +705,21 @@
       config = await res.json();
     } catch (e) {
       config = { accessCodeRequired: false, transcription: false, writing: false };
-      showNotice("서버 기능(API)에 연결하지 못했습니다. 샘플 책은 볼 수 있지만, 새 책을 만들려면 Vercel 등 서버 기능이 있는 곳에 배포해야 합니다.");
+      showNotice(["지금은 책 만들기 기능에 연결할 수 없어요. 샘플 책은 볼 수 있습니다."]);
+      console.warn("API not reachable: deploy with server functions (e.g. Vercel).");
     }
     $("access-field").hidden = !config.accessCodeRequired;
     var problems = [];
-    if (!config.transcription) problems.push("음성 인식용 GROQ_API_KEY가 없어 오디오를 글로 옮길 수 없습니다. 녹취록을 직접 붙여넣어 주세요.");
-    if (!config.writing) problems.push("글쓰기용 API 키(ANTHROPIC_API_KEY 또는 OPENROUTER_API_KEY)가 없어 책을 쓸 수 없습니다.");
-    if (config.mock) problems.push("모의(MOCK) 모드입니다. 실제 AI 대신 샘플 내용으로 동작합니다.");
-    if (problems.length && $("notice").hidden) {
-      showNotice(problems.map(function (p) { return "• " + p.replace(/[<>&]/g, ""); }).join("<br>"));
+    if (!config.transcription) {
+      problems.push("지금은 녹음 받아쓰기를 쓸 수 없어요. 2단계에 녹취록을 직접 붙여넣어 주세요.");
+      console.warn("Transcription disabled: set GROQ_API_KEY (or OPENAI_API_KEY).");
     }
-    if (!config.transcription && !draft) selectTab("text");
+    if (!config.writing) {
+      problems.push("지금은 책 쓰기 기능을 쓸 수 없어요.");
+      console.warn("Writing disabled: set OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
+    }
+    if (config.mock) problems.push("시험 모드입니다. 실제 AI 대신 샘플 내용으로 동작합니다.");
+    if (problems.length && $("notice").hidden) showNotice(problems);
     $("make-btn").disabled = !config.writing;
   }
 

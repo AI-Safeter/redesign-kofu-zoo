@@ -15,7 +15,10 @@ export function errorResponse(message, status = 400) {
 export function checkAccess(request) {
   const required = process.env.ACCESS_CODE;
   if (!required) return null;
-  const given = request.headers.get("x-access-code") || "";
+  let given = request.headers.get("x-access-code") || "";
+  try {
+    given = decodeURIComponent(given);
+  } catch {}
   if (!timingSafeEqual(given, required)) {
     return errorResponse("접근 코드가 올바르지 않습니다.", 401);
   }
@@ -32,26 +35,49 @@ function timingSafeEqual(a, b) {
 export const isMock = () => process.env.MOCK_AI === "1";
 
 /**
- * Streams newline-delimited JSON events to the browser while `work` runs.
+ * Streams newline-delimited JSON events to the browser while `work(send, signal)` runs.
  * Sends a heartbeat every 10s so proxies don't drop an idle connection,
  * then a final {type:"done", result} or {type:"error", message} line.
+ * If the browser goes away, `signal` aborts so the AI call stops (and stops costing money),
+ * and nothing more is written to the closed stream.
  */
-export function ndjsonStream(work) {
+export function ndjsonStream(work, request) {
   const encoder = new TextEncoder();
+  const abort = new AbortController();
+  request?.signal?.addEventListener?.("abort", () => abort.abort());
+  let closed = false;
+  let heartbeat;
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event) => controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
-      const heartbeat = setInterval(() => send({ type: "ping" }), 10_000);
+      const send = (event) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+        } catch {
+          closed = true;
+        }
+      };
+      heartbeat = setInterval(() => send({ type: "ping" }), 10_000);
       try {
-        const result = await work(send);
+        const result = await work(send, abort.signal);
         send({ type: "done", result });
       } catch (err) {
-        console.error(err);
+        if (!abort.signal.aborted) console.error(err);
         send({ type: "error", message: friendlyError(err) });
       } finally {
         clearInterval(heartbeat);
-        controller.close();
+        if (!closed) {
+          closed = true;
+          try {
+            controller.close();
+          } catch {}
+        }
       }
+    },
+    cancel() {
+      closed = true;
+      clearInterval(heartbeat);
+      abort.abort();
     },
   });
   return new Response(stream, {
@@ -65,8 +91,10 @@ export function ndjsonStream(work) {
 
 export function friendlyError(err) {
   const status = err?.status;
+  // Our own errors carry a Korean message; anything else is unexpected and stays in the logs.
+  if (/[가-힣]/.test(err?.message || "")) return err.message;
   if (status === 401) return "API 키가 올바르지 않습니다. 서버 환경변수를 확인해 주세요.";
   if (status === 429) return "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.";
   if (status === 529 || status === 503) return "AI 서버가 혼잡합니다. 잠시 후 다시 시도해 주세요.";
-  return err?.userMessage || err?.message || "알 수 없는 오류가 발생했습니다.";
+  return "일시적인 서버 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.";
 }

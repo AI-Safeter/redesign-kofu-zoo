@@ -20,7 +20,7 @@ export async function POST(request) {
     return errorResponse(err.message || "잘못된 요청입니다.", err.status || 400);
   }
 
-  return ndjsonStream((send) =>
-    isMock() ? mockChapter(index, send) : writeChapter({ ...input, outline, index, onProgress: send }),
-  );
+  return ndjsonStream((send, signal) =>
+    isMock() ? mockChapter(index, send) : writeChapter({ ...input, outline, index, onProgress: send, signal }),
+  request);
 }

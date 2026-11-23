@@ -1,9 +1,22 @@
 # 인생 이야기 전자책 · Life Chronicle E-book Builder
 
-Upload a recorded interview (Korean) and get a 10–13 page HTML e-book that chronicles one person's life: cover, contents, prologue, 5–8 chronological chapters, a timeline (연보), and an epilogue.
+Upload a recorded interview (Korean) and get an HTML e-book that chronicles one person's life, in time order:
+
+- **Cover**, **contents**, **이 책의 사람들** (the people in the story), **책을 펴내며** (preface with an epigraph in their own words)
+- **3–8 chapters**, each opening with its years, the person's age and the place (e.g. "1955–1972 · 출생–17세 · 경북 안동"), a pull quote, and an **인터뷰에서** box with a real question and answer from the recording
+- **남기고 싶은 말** (their message to the family, verbatim), **연보** (timeline grouped by chapter, with ages), **에필로그**, and a colophon with the interview details
 
 - **Sample book:** `/book?sample` (a fictional person, written by hand to show the format)
-- **Builder:** `/` (upload audio → review transcript → generate → read, edit, download)
+- **Builder:** `/` (upload audio → review and correct the transcript → generate → read, edit, save as a file or PDF)
+
+### Faithfulness
+
+A family book must not put words in anyone's mouth, so the pipeline checks the model's work in code:
+
+- Every quotation (pull quotes, the epigraph, 남기고 싶은 말, the interview excerpts, and any “…” in the text) is matched against the transcript. Quotes that can't be found are dropped or, inside the text, listed for the family to check in 글 고치기 mode.
+- The number of chapters is capped by how much the interview contains (about one chapter per 1,500 characters), and chapter length is scaled to the material, so a short interview gives a short book instead of a padded one.
+- Each episode and quote is assigned to one chapter; repeated paragraphs and sentences are removed.
+- Ages are computed from years in code, not by the model.
 
 ## How it works
 
@@ -23,7 +36,9 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 - When Groq's free tier says "slow down", the browser waits the time Groq asks for and retries that chunk automatically.
 - Each chapter is its own request, so no single function call comes close to the 300 s limit. The transcript is sent with prompt caching, so repeated calls for one book reuse it cheaply.
 - Claude is told to use only facts from the interview, quote the interviewee's real words, and leave uncertain dates approximate.
-- Nothing is stored on the server. Books live in the browser that made them, and **저장** downloads a single self-contained `.html` file you can send to family.
+- Nothing is stored on the server. Books live in the browser that made them, and **보기 설정 → HTML 파일로 저장** downloads a single self-contained `.html` file you can send to family.
+- A book in progress is saved after every step: if a chapter fails or the page is reloaded, **이어서 쓰기** continues where it stopped.
+- With OpenRouter, a model that loops or returns broken JSON is skipped and the request is retried on the next free model.
 
 ## Deploy to Vercel
 
@@ -81,7 +96,8 @@ api/
   transcribe.js         one audio chunk → text (Groq, or OpenAI as a fallback)
   outline.js            transcript → book plan (Claude)
   chapter.js            transcript + plan → one chapter (Claude)
-  _lib/writer.js        prompts, JSON schemas, Claude calls, output clean-up
+  _lib/writer.js        prompts, JSON schemas, Claude calls, output clean-up and checks
+  _lib/verify.js        checks that quotations appear in the transcript
   _lib/openrouter.js    OpenRouter (free models) calls
   _lib/http.js          access code, streaming responses, error messages
   _lib/mock.js          fake responses for MOCK_AI=1

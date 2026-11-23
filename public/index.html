@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>인생 이야기 전자책</title>
-  <meta name="description" content="인터뷰 녹음 하나로 한 사람의 삶을 5~10쪽짜리 전자책으로 엮어 드립니다.">
+  <meta name="description" content="인터뷰 녹음 하나로 한 사람의 삶을 연대기 전자책으로 엮어 드립니다.">
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,75 +24,107 @@
   <main class="wrap">
     <section class="hero">
       <h1>녹음 한 편으로,<br>한 사람의 삶을 한 권의 책으로.</h1>
-      <p>부모님, 조부모님과 나눈 인터뷰 녹음을 올리면 음성을 글로 옮기고, 어린 시절부터 지금까지를 장별로 엮은 전자책을 만들어 드립니다. 완성된 책은 바로 읽고, 고치고, HTML 파일이나 PDF로 저장해 가족과 나눌 수 있어요.</p>
+      <p>부모님, 조부모님과 나눈 인터뷰 녹음을 올리면 음성을 글로 옮기고, 태어난 해부터 지금까지를 장별로 엮은 연대기 전자책을 만들어 드립니다. 완성된 책은 바로 읽고, 고치고, 파일이나 PDF로 저장해 가족과 나눌 수 있어요.</p>
       <ol class="hero__steps">
         <li><b>1</b> 녹음 올리기</li>
         <li><b>2</b> 녹취록 확인</li>
-        <li><b>3</b> 책 완성</li>
+        <li><b>3</b> 책 정보</li>
       </ol>
     </section>
 
-    <div id="notice" class="notice" hidden></div>
+    <div id="notice" class="notice" role="status" hidden></div>
+
+    <div id="resume" class="banner" hidden>
+      <p id="resume-text"></p>
+      <div class="banner__actions">
+        <button id="resume-go" type="button" class="primary">이어서 쓰기</button>
+        <button id="resume-drop" type="button" class="btn">버리기</button>
+      </div>
+    </div>
 
     <section id="library" class="card" hidden>
       <h2 class="card__title">내 서재</h2>
-      <p class="card__hint">이 브라우저에 저장된 책입니다.</p>
+      <p class="card__hint">이 브라우저에만 저장된 책입니다. 브라우저 기록을 지우면 사라지니, 소중한 책은 ‘파일로 저장’해 두세요.</p>
       <ul id="library-list" class="library"></ul>
     </section>
 
     <form id="builder" class="card" novalidate>
       <h2 class="card__title">새 책 만들기</h2>
+      <fieldset id="form-fields" class="form-fields">
 
-      <fieldset class="step">
-        <legend><span class="step__num">1</span> 인터뷰 자료</legend>
+      <section class="step" aria-labelledby="step1-title">
+        <h3 class="step__title" id="step1-title"><span class="step__num">1</span> 녹음 올리기</h3>
+        <label id="dropzone" class="dropzone">
+          <input id="audio-file" type="file" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.webm">
+          <span class="dropzone__icon" aria-hidden="true">♪</span>
+          <span class="dropzone__main" id="dropzone-main">녹음 파일을 끌어다 놓거나 눌러서 고르세요</span>
+          <span class="dropzone__sub">MP3, M4A, WAV 등 · 한국어 인터뷰 · 2시간 이내 권장</span>
+        </label>
+        <p id="file-info" class="file-info" hidden></p>
 
-        <div class="tabs" role="tablist" aria-label="자료 종류">
-          <button type="button" role="tab" id="tab-audio" aria-controls="panel-audio" aria-selected="true">오디오 올리기</button>
-          <button type="button" role="tab" id="tab-text" aria-controls="panel-text" aria-selected="false" tabindex="-1">녹취록 붙여넣기</button>
+        <label class="field">
+          <span class="field__label">녹음에 나오는 이름·지명 <em>(선택)</em></span>
+          <input id="hint" type="text" placeholder="예: 이옥분, 김재곤, 서천, 평화시장" maxlength="300">
+          <span class="field__hint">적어 두면 받아쓰기가 이름을 더 정확하게 적습니다.</span>
+        </label>
+
+        <button id="transcribe-btn" type="button" class="primary" disabled>녹음을 글로 옮기기</button>
+        <div id="transcribe-progress" class="progress" hidden>
+          <div class="progress__bar" role="progressbar" aria-label="받아쓰기 진행" aria-valuemin="0" aria-valuemax="100"><span></span></div>
+          <p class="progress__label" role="status"></p>
+          <button id="transcribe-retry" type="button" class="btn" hidden>남은 부분 다시 받아쓰기</button>
         </div>
+        <p class="step__alt">녹취록이 이미 있다면 녹음 없이 2단계에 바로 붙여넣으세요.</p>
+      </section>
 
-        <div id="panel-audio" role="tabpanel" aria-labelledby="tab-audio">
-          <label id="dropzone" class="dropzone">
-            <input id="audio-file" type="file" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.webm">
-            <span class="dropzone__icon" aria-hidden="true">♪</span>
-            <span class="dropzone__main">녹음 파일을 끌어다 놓거나 눌러서 고르세요</span>
-            <span class="dropzone__sub">MP3, M4A, WAV 등 · 한국어 인터뷰 · 2시간 이내 권장</span>
-          </label>
-          <p id="file-info" class="file-info" hidden></p>
+      <section class="step" aria-labelledby="step2-title">
+        <h3 class="step__title" id="step2-title"><span class="step__num">2</span> 녹취록 확인</h3>
+        <p class="step__why"><b>AI는 이 글을 그대로 읽고 책을 씁니다.</b> 잘못 들린 이름이나 지명은 책 전체에 그대로 실리니, 책을 만들기 전에 꼭 한 번 훑어보고 고쳐 주세요.</p>
 
-          <label class="field">
-            <span class="field__label">이름·지명 힌트 <em>(선택)</em></span>
-            <input id="hint" type="text" placeholder="예: 이옥분, 김재곤, 서천, 평화시장, 남문시장" maxlength="300">
-            <span class="field__hint">녹음에 나오는 사람 이름이나 지명을 적으면 받아쓰기가 더 정확해져요.</span>
-          </label>
-
-          <button id="transcribe-btn" type="button" class="primary" disabled>녹음을 글로 옮기기</button>
-          <div id="transcribe-progress" class="progress" hidden>
-            <div class="progress__bar"><span></span></div>
-            <p class="progress__label"></p>
+        <div id="merge-choice" class="banner banner--inline" hidden>
+          <p>이미 적혀 있던 녹취록이 있어요. 새로 받아쓴 글을 어떻게 할까요?</p>
+          <div class="banner__actions">
+            <button id="merge-replace" type="button" class="primary">새 글로 바꾸기</button>
+            <button id="merge-append" type="button" class="btn">뒤에 이어 붙이기</button>
           </div>
         </div>
 
-        <div id="panel-text" role="tabpanel" aria-labelledby="tab-text" hidden>
-          <label class="field">
-            <span class="field__label">녹취록</span>
-            <textarea id="transcript" rows="12" placeholder="인터뷰 내용을 여기에 붙여넣거나, 위의 '오디오 올리기' 탭에서 녹음을 글로 옮기세요."></textarea>
-            <span class="field__hint" id="transcript-count">0자</span>
-          </label>
-          <p id="review-note" class="review-note" hidden>받아쓰기가 끝났어요. 이름이나 지명이 틀린 곳이 있으면 여기서 고친 뒤 책을 만드세요. 고친 만큼 책이 정확해집니다.</p>
-        </div>
-      </fieldset>
+        <label class="field">
+          <span class="field__label">녹취록</span>
+          <textarea id="transcript" rows="12" aria-describedby="transcript-count" placeholder="녹음을 글로 옮기면 여기에 나타납니다. 녹취록이 이미 있으면 붙여넣으세요."></textarea>
+          <span class="field__hint" id="transcript-count">0자</span>
+        </label>
 
-      <fieldset class="step">
-        <legend><span class="step__num">2</span> 책 정보</legend>
+        <div class="replace" role="group" aria-labelledby="replace-title">
+          <p class="replace__title" id="replace-title">잘못 들린 말 한꺼번에 고치기</p>
+          <div class="replace__row">
+            <input id="replace-from" type="text" placeholder="잘못된 말 (예: 변산북도)" aria-label="잘못된 말">
+            <span aria-hidden="true">→</span>
+            <input id="replace-to" type="text" placeholder="바른 말 (예: 경상북도)" aria-label="바른 말">
+            <button id="replace-btn" type="button" class="btn">모두 바꾸기</button>
+          </div>
+          <p class="field__hint" id="replace-result" role="status"></p>
+        </div>
+      </section>
+
+      <section class="step" aria-labelledby="step3-title">
+        <h3 class="step__title" id="step3-title"><span class="step__num">3</span> 책 정보</h3>
         <div class="grid2">
           <label class="field">
             <span class="field__label">주인공 이름</span>
             <input id="subject" type="text" placeholder="예: 이옥분" maxlength="60" autocomplete="off">
           </label>
           <label class="field">
+            <span class="field__label">인터뷰한 사람</span>
+            <input id="interviewer" type="text" placeholder="예: 큰손녀 김하은" maxlength="60" autocomplete="off">
+          </label>
+          <label class="field">
             <span class="field__label">인터뷰 날짜</span>
             <input id="date" type="text" placeholder="예: 2026년 11월" maxlength="40">
+          </label>
+          <label class="field">
+            <span class="field__label">인터뷰 장소</span>
+            <input id="place" type="text" placeholder="예: 서천 할머니 댁" maxlength="60">
           </label>
         </div>
 
@@ -114,12 +146,13 @@
           <label class="field">
             <span class="field__label">장 수</span>
             <select id="chapters">
-              <option value="5">5장 (전체 10쪽)</option>
-              <option value="6" selected>6장 (전체 11쪽)</option>
-              <option value="7">7장 (전체 12쪽)</option>
-              <option value="8">8장 (전체 13쪽)</option>
+              <option value="4">최대 4장</option>
+              <option value="5">최대 5장</option>
+              <option value="6" selected>최대 6장</option>
+              <option value="7">최대 7장</option>
+              <option value="8">최대 8장</option>
             </select>
-            <span class="field__hint">표지·차례·프롤로그·연보·에필로그가 함께 들어갑니다.</span>
+            <span class="field__hint">녹음 내용이 적으면 장 수를 줄여 지어낸 내용이 없게 합니다.</span>
           </label>
           <label class="field" id="access-field" hidden>
             <span class="field__label">접근 코드</span>
@@ -132,23 +165,29 @@
           <span class="field__label">작가에게 남길 메모 <em>(선택)</em></span>
           <textarea id="notes" rows="2" maxlength="1000" placeholder="예: 할머니 팔순 기념으로 손주들에게 나눠 줄 책입니다. 할아버지 이야기를 꼭 넣어 주세요."></textarea>
         </label>
+      </section>
       </fieldset>
 
       <div class="actions">
+        <p id="make-error" class="error" role="alert" hidden></p>
         <button id="make-btn" type="submit" class="primary primary--big">전자책 만들기</button>
-        <p class="actions__hint">글을 쓰는 데 보통 2~5분 걸립니다. 창을 닫지 마세요.</p>
+        <p class="actions__hint" id="make-hint">글을 쓰는 데 보통 2~5분 걸립니다. 그동안 이 창을 열어 두세요.</p>
       </div>
 
-      <div id="make-progress" class="make-progress" hidden aria-live="polite">
+      <div id="make-progress" class="make-progress" hidden>
+        <div class="overall">
+          <div class="progress__bar" role="progressbar" aria-label="책 만들기 진행" aria-valuemin="0" aria-valuemax="100"><span id="overall-bar"></span></div>
+          <p class="overall__text"><span id="overall-status" role="status"></span><span id="overall-eta"></span></p>
+        </div>
         <ol id="make-steps" class="make-steps"></ol>
-        <p id="make-error" class="error" hidden></p>
-        <button id="retry-btn" type="button" class="primary" hidden>실패한 부분 다시 시도</button>
+        <button id="retry-btn" type="button" class="primary primary--big" hidden>이어서 쓰기</button>
+        <button id="restart-btn" type="button" class="link-btn" hidden>처음부터 다시 만들기</button>
       </div>
     </form>
   </main>
 
   <footer class="site-foot">
-    <p>녹음과 녹취록은 책을 만드는 동안에만 AI 서비스로 전송되며, 이 사이트 서버에는 저장되지 않습니다. 만든 책은 이 브라우저에 저장됩니다.</p>
+    <p>녹음과 녹취록은 책을 만드는 동안에만 받아쓰기·AI 서비스로 전송되며, 이 사이트 서버에는 저장되지 않습니다. 만든 책은 이 브라우저에 저장됩니다.</p>
   </footer>
 
   <script src="/assets/library.js"></script>

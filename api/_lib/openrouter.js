@@ -34,19 +34,40 @@ export function extractJson(text) {
   return null;
 }
 
-export async function callOpenRouter({ system, userText, schema, schemaName, onProgress }) {
+/**
+ * Free models occasionally loop until they hit the length limit, or return text that is not
+ * JSON. When that happens, the request is tried again without the model that failed.
+ */
+export async function callOpenRouter(args) {
+  let list = models();
+  for (;;) {
+    try {
+      return await attempt({ ...args, models: list });
+    } catch (err) {
+      const rest = list.filter((m) => m !== err.servedBy);
+      if (!err.retryOther || !err.servedBy || rest.length === 0 || rest.length === list.length || args.signal?.aborted) throw err;
+      console.warn(`OpenRouter: retrying without ${err.servedBy}`);
+      list = rest;
+    }
+  }
+}
+
+async function attempt({ system, userText, schema, schemaName, onProgress, signal, models: modelList }) {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
+    signal,
     headers: {
       authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
       "content-type": "application/json",
       "x-title": "Life Chronicle E-book",
     },
     body: JSON.stringify({
-      models: models(),
+      models: modelList,
       stream: true,
       max_tokens: 16000,
       temperature: 0.7,
+      // Keep hidden reasoning short: it counts against max_tokens and some free models loop in it.
+      reasoning: { effort: "low", exclude: true },
       // Models that support it are held to the schema; the others get it in the prompt.
       response_format: { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } },
       messages: [
@@ -75,6 +96,8 @@ export async function callOpenRouter({ system, userText, schema, schemaName, onP
   let text = "";
   let lastSent = 0;
   let finish = null;
+  let servedBy = "";
+  let usage = null;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -96,6 +119,7 @@ export async function callOpenRouter({ system, userText, schema, schemaName, onP
         console.error("OpenRouter stream error", event.error);
         throw fail("AI 모델이 응답 도중 멈췄습니다. 다시 시도해 주세요.", 502);
       }
+      if (event.model) servedBy = event.model;
       const choice = event.choices?.[0];
       const delta = choice?.delta?.content;
       if (delta) {
@@ -106,14 +130,18 @@ export async function callOpenRouter({ system, userText, schema, schemaName, onP
         }
       }
       if (choice?.finish_reason) finish = choice.finish_reason;
+      if (event.usage) usage = event.usage;
     }
   }
 
-  if (finish === "length") throw fail("결과가 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요.");
+  if (finish === "length") {
+    console.error(`OpenRouter ${servedBy} hit the length limit after ${text.length} chars; tail:`, JSON.stringify(text.slice(-300)));
+    throw Object.assign(fail("결과가 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요."), { servedBy, retryOther: true });
+  }
   const data = extractJson(text);
   if (!data) {
-    console.error("OpenRouter reply was not JSON:", text.slice(0, 500));
-    throw fail("AI 응답을 해석하지 못했습니다. 다시 시도해 주세요.");
+    console.error(`OpenRouter ${servedBy} reply was not JSON:`, text.slice(0, 500));
+    throw Object.assign(fail("AI 응답을 해석하지 못했습니다. 다시 시도해 주세요."), { servedBy, retryOther: true });
   }
-  return { data };
+  return { data, model: servedBy };
 }
