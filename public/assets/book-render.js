@@ -94,27 +94,16 @@
   // ---------- Pages ----------
 
   function coverPage(book) {
-    var created = refYear(book);
-    var work = book.kind === "work";
-    var teller = book.subjectName ? "이야기한 사람 · " + book.subjectName : book.speakerRole || "";
-    var origin = [book.birthYear ? book.birthYear + "년" : "", book.birthplace || book.born || ""].filter(Boolean).join(" ");
     return {
       kind: "cover",
       label: "표지",
       node: el("div", { className: "cover" }, [
         el("div", { className: "cover__top" }, [
           book.sample ? el("p", { className: "cover__badge", text: book.meta && book.meta.origin ? "샘플 · 사람이 쓴 예시 · 가상의 인물" : "샘플 · 가상의 인물" }) : null,
-          el("p", { className: "cover__kicker", text: work ? "인터뷰 기록" : book.kind === "mixed" ? "한 사람의 삶과 일" : "한 사람의 생애 기록" }),
         ]),
         el("div", { className: "cover__main" }, [
           txt("h1", "cover__title", book.title, "title"),
           book.subtitle ? txt("p", "cover__subtitle", book.subtitle, "subtitle") : null,
-        ]),
-        el("div", { className: "cover__bottom" }, [
-          teller ? el("p", { className: "cover__teller", text: teller }) : null,
-          book.subjectName && book.speakerRole ? txt("p", "cover__origin", book.speakerRole, "speakerRole") : null,
-          origin ? el("p", { className: "cover__origin", text: origin + " 출생" }) : null,
-          el("p", { className: "cover__imprint", text: book.kind === "life" || !book.kind ? "가족이 엮은 책 · " + created : created + "년 " + (new Date(book.createdAt || Date.now()).getMonth() + 1) + "월" }),
         ]),
       ]),
     };
@@ -178,7 +167,7 @@
     var list = (book.frameUnsupported || []).filter(function (u) { return frame.indexOf(norm(u).slice(0, 20)) >= 0; });
     if (!list.length) return null;
     return el("div", { className: "verify-note", role: "note" }, [
-      el("p", { text: "녹취록에 근거가 약한 문장입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }),
+      el("p", { text: "확인할 문장" }),
       el("ul", null, list.map(function (u) { return el("li", { text: u }); })),
     ]);
   }
@@ -257,11 +246,11 @@
     var check =
       unv.length || uns.length || mis.length
         ? el("div", { className: "verify-note", role: "note" }, [
-            unv.length ? el("p", { text: "녹취록에서 찾지 못한 인용입니다. 실제로 하신 말씀인지 확인해 주세요:" }) : null,
+            unv.length ? el("p", { text: "확인할 인용" }) : null,
             unv.length ? el("ul", null, unv.map(function (u) { return el("li", { text: "“" + u + "”" }); })) : null,
-            uns.length ? el("p", { text: "녹취록에 근거가 약한 서술입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }) : null,
+            uns.length ? el("p", { text: "확인할 문장" }) : null,
             uns.length ? el("ul", null, uns.map(function (u) { return el("li", { text: u }); })) : null,
-            mis.length ? el("p", { text: "녹음에서 이 장에 해당하는 말 가운데 책에 빠진 부분입니다. 필요하면 넣어 주세요:" }) : null,
+            mis.length ? el("p", { text: "빠진 말" }) : null,
             mis.length ? el("ul", null, mis.map(function (u) { return el("li", { text: u }); })) : null,
           ])
         : null;
