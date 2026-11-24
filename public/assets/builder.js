@@ -1019,6 +1019,22 @@
     }
   }
 
+  // Sidebar on wide screens: mark the step being worked on.
+  var stepLinks = document.querySelectorAll(".steps-nav a");
+  if (window.IntersectionObserver) {
+    var steps = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        var id = e.target.getAttribute("aria-labelledby");
+        stepLinks.forEach(function (a) {
+          if (a.hash === "#" + id) a.setAttribute("aria-current", "step");
+          else a.removeAttribute("aria-current");
+        });
+      });
+    }, { rootMargin: "-30% 0px -60% 0px" });
+    document.querySelectorAll(".step").forEach(function (s) { steps.observe(s); });
+  }
+
   async function init() {
     renderLibrary();
     try {
