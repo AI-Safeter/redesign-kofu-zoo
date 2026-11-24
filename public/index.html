@@ -35,7 +35,7 @@
       <ul id="library-list" class="library"></ul>
     </section>
 
-    <form id="builder" class="card" novalidate>
+    <form id="builder" novalidate>
       <h2 class="card__title">새 책 만들기</h2>
       <fieldset id="form-fields" class="form-fields">
 
@@ -48,7 +48,7 @@
           <span class="dropzone__sub">MP3, M4A, WAV 등 · 한국어 인터뷰 · 2시간 이내 권장</span>
         </label>
         <p id="file-info" class="file-info" role="status" hidden></p>
-        <p id="tx-resume" class="banner banner--inline" hidden></p>
+        <p id="tx-resume" class="banner" hidden></p>
 
         <label class="field">
           <span class="field__label">녹음에 나오는 이름·지명·용어 <em>(선택)</em></span>
@@ -69,7 +69,7 @@
         <h3 class="step__title" id="step2-title"><span class="step__num">2</span> 녹취록 확인</h3>
         <p class="step__why"><b>AI는 이 글을 그대로 읽고 책을 씁니다.</b> 잘못 들린 이름이나 지명은 책 전체에 그대로 실리니, 책을 만들기 전에 꼭 한 번 훑어보고 고쳐 주세요.</p>
 
-        <div id="merge-choice" class="banner banner--inline" hidden>
+        <div id="merge-choice" class="banner" hidden>
           <p>이미 적혀 있던 녹취록이 있어요. 새로 받아쓴 글을 어떻게 할까요?</p>
           <div class="banner__actions">
             <button id="merge-replace" type="button" class="primary">새 글로 바꾸기</button>
@@ -121,7 +121,7 @@
 
         <div class="field">
           <span class="field__label" id="voice-label">문체</span>
-          <div class="choices choices--3" role="radiogroup" aria-labelledby="voice-label">
+          <div class="choices" role="radiogroup" aria-labelledby="voice-label">
             <label class="choice">
               <input type="radio" name="voice" value="first" checked>
               <span><b>1인칭 회고록</b><small>"나는 서천 바닷가에서 태어났다." 주인공이 직접 들려주는 듯한 글</small></span>

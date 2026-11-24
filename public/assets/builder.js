@@ -440,8 +440,11 @@
   // The box stays hidden unless the AI is checking or has something to suggest.
   var fixesBusy = false;
   var fixesAgain = false; // a new transcript arrived while a check was running
+  var checkedText = ""; // the transcript (spaces removed) last sent for checking; "" = not checked yet
+  var squash = function (s) { return s.replace(/\s+/g, ""); };
   function hideFixes() {
     $("fixes-box").hidden = true;
+    $("fixes-status").textContent = "";
     $("fixes-list").textContent = "";
     $("fixes-apply").hidden = true;
     $("fixes-retry").hidden = true;
@@ -457,6 +460,7 @@
       return;
     }
     fixesBusy = true;
+    checkedText = squash(transcript);
     forgetUndo();
     hideFixes();
     $("fixes-box").hidden = false;
@@ -490,7 +494,8 @@
     var current = $("transcript").value;
     fixes = fixes.filter(function (f) { return current.indexOf(f.heard) >= 0; });
     if (!fixes.length) {
-      hideFixes();
+      // Say so, or "checked, nothing found" looks the same as "never checked".
+      $("fixes-status").textContent = "AI가 잘못 들린 말을 찾지 못했어요. 이름과 숫자만 한 번 훑어봐 주세요.";
       return;
     }
     var places = fixes.reduce(function (n, f) { return n + (f.heard.length <= 2 ? 1 : current.split(f.heard).length - 1); }, 0);
@@ -542,13 +547,21 @@
     $("fixes-apply").disabled = !any;
   }
 
-  $("fixes-retry").addEventListener("click", findFixes);
-  // A pasted transcript gets the same check as a transcribed one. A short paste is an edit:
-  // re-checking then would throw away the suggestions being worked through.
+  $("fixes-retry").addEventListener("click", function () {
+    $("transcript").focus(); // the button hides itself; keep keyboard focus somewhere useful
+    findFixes();
+  });
+  // A pasted transcript gets the same check as a transcribed one. A short paste, or text moved
+  // within the transcript, is an edit: re-checking would throw away the suggestions in progress.
   $("transcript").addEventListener("paste", function (e) {
-    if (!config.writing || (e.clipboardData.getData("text") || "").length < 200) return;
+    var pasted = e.clipboardData.getData("text") || "";
+    if (!config.writing || pasted.length < 200 || checkedText.indexOf(squash(pasted)) >= 0) return;
     if (tx) tx.altText = ""; // the second transcription belongs to the recording, not to this text
-    setTimeout(findFixes, 300);
+    setTimeout(findFixes, 0); // the pasted text is in the box on the next task
+  });
+  // Typed text, text pasted in small pieces or inserted by a phone keyboard: check once, on leaving the box.
+  $("transcript").addEventListener("change", function () {
+    if (config.writing && !checkedText) findFixes();
   });
   // Undo restores the transcript as it was before the last "고치기", and re-enables only that
   // batch's items. Any later change to the transcript ends the chance to undo.
@@ -615,13 +628,15 @@
 
   var draftTimer;
   function onTranscriptInput(fromFixes) {
-    if (fromFixes !== true) forgetUndo(); // typing, replacing or a new transcript ends undo
+    if (fromFixes !== true) forgetUndo(); // typing or a new transcript ends undo
     if (pendingText && !$("transcript").value.trim() && !$("merge-choice").hidden) {
       $("transcript").value = pendingText;
       pendingText = null;
       $("merge-choice").hidden = true;
+      if (config.writing) setTimeout(findFixes, 0);
     }
     var v = $("transcript").value;
+    if (v.trim().length < 200) checkedText = "";
     $("transcript-count").textContent = v.length.toLocaleString() + "자" + (v.length && v.length < 200 ? " · 책을 만들려면 200자 이상 필요해요" : "");
     clearTimeout(draftTimer);
     draftTimer = setTimeout(function () { sset(localStorage, DRAFT_KEY, v); }, 500);
@@ -1038,6 +1053,7 @@
       problems.push("지금은 책 쓰기 기능을 쓸 수 없어요.");
       console.warn("Writing disabled: set NOUS_API_KEY, OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
     }
+    if (config.mock) console.warn("MOCK_AI is on: transcripts and books are samples, not real AI output.");
     if (problems.length && $("notice").hidden) showNotice(problems);
     $("make-btn").disabled = !config.writing;
   }
