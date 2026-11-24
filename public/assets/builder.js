@@ -655,7 +655,6 @@
       voice: document.querySelector('input[name="voice"]:checked').value,
       terms: $("hint").value.trim(),
       chapters: parseInt($("chapters").value, 10),
-      notes: $("notes").value.trim(),
     };
   }
 
