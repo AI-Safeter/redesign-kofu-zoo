@@ -27,7 +27,6 @@
     <section id="library" class="shelf" hidden>
       <h2 class="shelf__title">내 서재</h2>
       <ul id="library-list" class="library"></ul>
-      <p class="shelf__hint">이 브라우저에만 저장돼요. 소중한 책은 ‘파일로 저장’해 두세요.</p>
     </section>
   </aside>
 
@@ -52,7 +51,6 @@
           <input id="audio-file" type="file" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.webm">
           <span class="dropzone__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4.5 14.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg></span>
           <span class="dropzone__main" id="dropzone-main">녹음 파일을 끌어다 놓거나 눌러서 고르세요</span>
-          <span class="dropzone__sub">MP3, M4A, WAV 등 · 한국어 인터뷰 · 2시간 이내 권장</span>
         </label>
         <p id="file-info" class="file-info" role="status" hidden></p>
         <p id="tx-resume" class="banner" hidden></p>
@@ -68,12 +66,10 @@
           <p class="progress__label" role="status"></p>
           <button id="transcribe-retry" type="button" class="btn" hidden>남은 부분 다시 받아쓰기</button>
         </div>
-        <p class="step__alt">녹취록이 이미 있다면 녹음 없이 2단계에 바로 붙여넣으세요.</p>
       </section>
 
       <section class="step" aria-labelledby="step2-title">
         <h3 class="step__title" id="step2-title"><span class="step__num">2</span> 녹취록 확인</h3>
-        <p class="step__why"><b>AI는 이 글을 그대로 읽고 책을 씁니다.</b> 잘못 들린 이름이나 지명은 책 전체에 그대로 실리니, 책을 만들기 전에 꼭 한 번 훑어보고 고쳐 주세요.</p>
 
         <div id="merge-choice" class="banner" hidden>
           <p>이미 적혀 있던 녹취록이 있어요. 새로 받아쓴 글을 어떻게 할까요?</p>
@@ -132,15 +128,15 @@
           <div class="choices" role="radiogroup" aria-labelledby="voice-label">
             <label class="choice">
               <input type="radio" name="voice" value="first" checked>
-              <span><b>1인칭 회고록</b><small>"나는 서천 바닷가에서 태어났다." 주인공이 직접 들려주는 듯한 글</small></span>
+              <span><b>1인칭 회고록</b><small>"나는 서천 바닷가에서 태어났다."</small></span>
             </label>
             <label class="choice">
               <input type="radio" name="voice" value="third">
-              <span><b>3인칭 전기</b><small>"그는 서천 바닷가에서 태어났다." 곁에서 기록한 듯한 글</small></span>
+              <span><b>3인칭 전기</b><small>"그는 서천 바닷가에서 태어났다."</small></span>
             </label>
             <label class="choice">
               <input type="radio" name="voice" value="oral">
-              <span><b>구술 정리</b><small>"저는 서천 바닷가에서 났어요." 말한 그대로의 말투를 살린 글. 강연이나 일 이야기에 잘 맞아요</small></span>
+              <span><b>구술 정리</b><small>"저는 서천 바닷가에서 났어요."</small></span>
             </label>
           </div>
         </div>
@@ -157,12 +153,10 @@
               <option value="7">최대 7장</option>
               <option value="8">최대 8장</option>
             </select>
-            <span class="field__hint">녹음 내용이 적으면 장 수를 줄여 지어낸 내용이 없게 합니다.</span>
           </label>
           <label class="field" id="access-field" hidden>
             <span class="field__label">접근 코드</span>
             <input id="access" type="password" autocomplete="off">
-            <span class="field__hint">이 사이트를 만든 분께 받은 코드를 입력하세요.</span>
           </label>
         </div>
       </section>
@@ -171,7 +165,6 @@
       <div class="actions">
         <p id="make-error" class="error" role="alert" hidden></p>
         <button id="make-btn" type="submit" class="primary primary--big">전자책 만들기</button>
-        <p class="actions__hint" id="make-hint">글을 쓰는 데 보통 2~5분 걸립니다. 그동안 이 창을 열어 두세요.</p>
       </div>
 
       <div id="make-progress" class="make-progress" hidden>
@@ -185,9 +178,6 @@
       </div>
     </form>
 
-    <footer class="site-foot">
-      <p>녹음과 녹취록은 책을 만드는 동안에만 받아쓰기·AI 서비스로 전송되며, 이 사이트 서버에는 저장되지 않습니다. 만든 책은 이 브라우저에 저장됩니다.</p>
-    </footer>
   </main>
 </div>
 

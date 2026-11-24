@@ -299,7 +299,7 @@
     var total = 1;
     try {
       if (!tx || tx.file !== audioFile) {
-        setTranscribeProgress(0.02, "녹음 파일을 준비하는 중… (긴 녹음은 1분 정도 걸릴 수 있어요)", false, true);
+        setTranscribeProgress(0.02, "녹음 파일을 준비하는 중…", false, true);
         tx = { file: audioFile, hint: hint, prepared: await AudioChunker.prepare(audioFile), texts: [], alts: [] };
         tx.id = txIdentity(audioFile, hint);
         tx.total = tx.prepared.chunks.length;
@@ -324,8 +324,7 @@
           var left = Math.ceil((((Date.now() - started) / doneHere) * (total - done)) / 60000);
           eta = " · 약 " + left + "분 남음";
         }
-        var keep = total > 3 ? " · 이 화면을 켜 두세요" : "";
-        setTranscribeProgress(0.05 + 0.95 * (done / total), (extra || "음성을 글로 옮기는 중… ") + done + "/" + total + lengthNote + eta + keep);
+        setTranscribeProgress(0.05 + 0.95 * (done / total), (extra || "음성을 글로 옮기는 중… ") + done + "/" + total + lengthNote + eta);
       };
       progress();
 
@@ -353,7 +352,7 @@
       };
       var text = join(tx.texts);
       tx.altText = join(tx.alts);
-      setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자. 아래 2단계에서 확인해 주세요.");
+      setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자");
       tx.done = true; // before delivering: proofreading starts right away and needs the second transcription
       tx.prepared = { duration: tx.prepared.duration, chunks: [] }; // release the decoded audio
       sdel(localStorage, TX_KEY);
@@ -438,7 +437,7 @@
     hideFixes();
     $("fixes-box").hidden = false;
     // Screen readers announce a live region only if it was already shown before its text changed.
-    var announce = setTimeout(function () { $("fixes-status").textContent = "AI가 녹취록에서 잘못 들린 말을 찾고 있어요… (1분 안팎)"; }, 100);
+    var announce = setTimeout(function () { $("fixes-status").textContent = "AI가 잘못 들린 말을 찾고 있어요…"; }, 100);
     try {
       var res = await withRetry(function () {
         return streamCall("/api/fixes", {
@@ -468,11 +467,11 @@
     fixes = fixes.filter(function (f) { return current.indexOf(f.heard) >= 0; });
     if (!fixes.length) {
       // Say so, or "checked, nothing found" looks the same as "never checked".
-      $("fixes-status").textContent = "AI가 잘못 들린 말을 찾지 못했어요. 이름과 숫자만 한 번 훑어봐 주세요.";
+      $("fixes-status").textContent = "잘못 들린 말이 없어요.";
       return;
     }
     var places = fixes.reduce(function (n, f) { return n + (f.heard.length <= 2 ? 1 : current.split(f.heard).length - 1); }, 0);
-    $("fixes-status").textContent = "AI가 " + fixes.length + "개(" + places + "곳)를 찾았어요. 확실한 것만 미리 체크해 두었으니, 맞는 것만 남기고 ‘체크한 것 고치기’를 누르세요.";
+    $("fixes-status").textContent = "AI가 " + fixes.length + "개(" + places + "곳)를 찾았어요.";
     fixes.forEach(function (f) {
       var li = document.createElement("li");
       var label = document.createElement("label");
@@ -610,7 +609,7 @@
     }
     var v = $("transcript").value;
     if (v.trim().length < 200) checkedText = "";
-    $("transcript-count").textContent = v.length.toLocaleString() + "자" + (v.length && v.length < 200 ? " · 책을 만들려면 200자 이상 필요해요" : "");
+    $("transcript-count").textContent = v.length.toLocaleString() + "자";
     clearTimeout(draftTimer);
     draftTimer = setTimeout(function () { sset(localStorage, DRAFT_KEY, v); }, 500);
   }
@@ -765,7 +764,6 @@
     busy = on;
     $("form-fields").disabled = on;
     $("make-btn").hidden = on || (job && job.failed);
-    $("make-hint").hidden = on || (job && job.failed);
     $("retry-btn").hidden = on || !(job && job.failed);
     $("restart-btn").hidden = on || !(job && job.failed);
     $("make-progress").hidden = !job;
@@ -1003,8 +1001,7 @@
       var unfinishedTx = JSON.parse(sget(localStorage, TX_KEY) || "null");
       if (unfinishedTx && unfinishedTx.texts) {
         var n = unfinishedTx.texts.filter(function (t) { return t != null; }).length;
-        $("tx-resume").textContent = "받아쓰던 녹음 ‘" + unfinishedTx.name + "’이 " + n + "/" + unfinishedTx.total +
-          "개 부분까지 끝났어요. 같은 파일을 다시 고르고 ‘녹음을 글로 옮기기’를 누르면 이어서 받아씁니다.";
+        $("tx-resume").textContent = "‘" + unfinishedTx.name + "’ 받아쓰기가 " + n + "/" + unfinishedTx.total + "에서 멈췄어요. 같은 파일을 고르면 이어서 받아씁니다.";
         $("tx-resume").hidden = false;
       }
     } catch (e) {}

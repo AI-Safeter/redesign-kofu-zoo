@@ -101,7 +101,6 @@ body {
 /* ---------- Library (sidebar on wide screens) ---------- */
 .shelf { margin: 8px 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .shelf__title { margin: 0 0 4px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; color: var(--ink-3); }
-.shelf__hint { margin: 8px 0 0; font-size: 0.78rem; color: var(--ink-3); line-height: 1.5; }
 .library { list-style: none; margin: 0; padding: 0; }
 .library li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 0; border-top: 1px solid var(--line); }
 .library li:first-child { border-top: 0; }
@@ -122,8 +121,6 @@ body {
 .step:first-child { border-top: 0; padding-top: 8px; }
 .step__title { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; font-size: 1.2rem; font-weight: 700; letter-spacing: -0.025em; scroll-margin-top: 24px; }
 .step__num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: var(--ink); color: var(--page); font-size: 0.78rem; font-weight: 700; }
-.step__why { margin: -8px 0 18px; color: var(--ink-2); font-size: 0.95rem; max-width: 46em; }
-.step__alt { margin: 14px 0 0; font-size: 0.88rem; color: var(--ink-3); }
 @media (min-width: 1024px) {
   .step { padding-block: 40px; }
   .step:first-child { padding-top: 0; }
@@ -199,7 +196,6 @@ textarea { resize: vertical; line-height: 1.75; }
 .dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .dropzone__icon { color: var(--ink-2); margin-bottom: 6px; }
 .dropzone__main { font-weight: 600; }
-.dropzone__sub { font-size: 0.84rem; color: var(--ink-3); }
 .dropzone.is-disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
 .file-info { margin: 0 0 18px; font-size: 0.92rem; color: var(--ink-2); word-break: break-all; }
 .file-info.is-error { color: var(--danger); font-weight: 500; }
@@ -281,15 +277,13 @@ textarea { resize: vertical; line-height: 1.75; }
 
 /* ---------- Main action & book progress ---------- */
 .actions { padding-top: 24px; border-top: 1px solid var(--line); }
-.actions__hint { font-size: 0.88rem; color: var(--ink-3); margin: 12px 0 0; text-align: center; }
 @media (min-width: 1024px) {
   .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
   .actions .error { flex-basis: 100%; }
   .actions .primary--big { width: auto; padding: 14px 36px; }
-  .actions__hint { margin: 0; text-align: left; }
 }
 
-.make-progress { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); max-width: 46em; scroll-margin-top: 24px; }
+.make-progress { margin-top: 24px; max-width: 46em; scroll-margin-top: 24px; }
 .overall { margin-bottom: 16px; }
 .overall__text { margin: 12px 0 0; font-weight: 600; }
 #overall-eta { color: var(--ink-3); font-weight: 400; }
@@ -308,10 +302,6 @@ textarea { resize: vertical; line-height: 1.75; }
 .make-steps li.is-failed .dot::before { content: "!"; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (min-width: 1024px) { .make-progress .primary--big { width: auto; padding: 14px 36px; } .make-progress .link-btn { margin-left: 0; } }
-
-/* ---------- Footer ---------- */
-.site-foot { margin-top: 40px; font-size: 0.8rem; color: var(--ink-3); max-width: 46em; }
-.site-foot p { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
