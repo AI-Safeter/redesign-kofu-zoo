@@ -55,6 +55,7 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
    | `OPENROUTER_API_KEY` | recommended | Speech recognition (Qwen audio model), and free writing models used when there is no Nous key or Nous fails. <https://openrouter.ai/keys> |
    | `ANTHROPIC_API_KEY` | no | Writing with Claude through Anthropic's own API instead; takes priority over the gateways when set. <https://platform.claude.com> |
    | `GROQ_API_KEY` | recommended | Free Whisper fallback for transcription (used when the OpenRouter audio models fail or there's no OpenRouter key). Create a key at <https://console.groq.com/keys>. Without it, recordings can only be transcribed through OpenRouter |
+   | `BLOB_READ_WRITE_TOKEN` | for 발행하기 | Publishing books as read-only pages (`/read?id=…`). Set automatically when you create a Blob store in Vercel (Storage → Create → Blob) and connect it to this project. Without it the 발행하기 button is hidden |
    | `ACCESS_CODE` | recommended | If set, visitors must enter this code before the app calls the paid APIs |
    | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5` |
    | `CLAUDE_EFFORT` | no | `low` / `medium` / `high` (default) / `xhigh` / `max` |
@@ -106,6 +107,9 @@ api/
   outline.js            transcript → book plan
   chapter.js            transcript + plan → one chapter
   fixes.js              transcript → suggested corrections of mishearings
+  publish.js            book → read-only page in Vercel Blob (same link when published again)
+  read.js               published book for /read?id=…
+  _lib/books.js         Vercel Blob storage (in memory with MOCK_AI=1)
   _lib/writer.js        prompts, JSON schemas, Claude calls, output clean-up and checks
   _lib/verify.js        checks that quotations appear in the transcript
   _lib/openrouter.js    OpenRouter (free models) calls

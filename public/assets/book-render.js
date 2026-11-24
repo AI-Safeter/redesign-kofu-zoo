@@ -9,20 +9,6 @@
 (function () {
   "use strict";
 
-  var THEME_KEY = "chronicle:theme";
-  var SIZE_KEY = "chronicle:size";
-  var SIZES = ["s", "m", "l", "xl"];
-  var SIZE_NAMES = { s: "작게", m: "보통", l: "크게", xl: "아주 크게" };
-
-  function store(key, value) {
-    try {
-      if (value === undefined) return localStorage.getItem(key);
-      localStorage.setItem(key, value);
-    } catch (e) {
-      return null;
-    }
-  }
-
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
     if (attrs) {
@@ -409,88 +395,42 @@
     var editing = false;
 
     document.title = (book.title || "인생 이야기") + (book.subtitle ? " — " + book.subtitle : "");
-    applyTheme(store(THEME_KEY));
-    applySize(store(SIZE_KEY) || "m");
 
-    // ----- Top bar: home, title, contents, view settings -----
-    var viewBtn = button("보기 설정", "글자 크기, 밤 모드, 저장과 인쇄", null);
+    // ----- Top bar: home, title, and (for the owner) 글 고치기 · 발행하기 -----
     var editBtn = options.onChange ? button("글 고치기", "본문을 직접 고칩니다", function () { setEditing(!editing); }) : null;
-    viewBtn.setAttribute("aria-expanded", "false");
-    viewBtn.setAttribute("aria-controls", "reader-panel");
+    var publishBtn = options.onPublish ? button("발행하기", "읽기 전용 링크를 만듭니다", publish) : null;
     var top = el("header", { className: "reader__top" }, [
       options.homeHref
         ? el("a", { className: "reader__home", href: options.homeHref, text: "← 서재" })
         : el("span", { className: "reader__home" }),
       el("p", { className: "reader__title", text: book.title || "" }),
-      el("div", { className: "reader__actions" }, [
-        button("차례", "차례로 가기", function () { go(1, true); }),
-        editBtn,
-        viewBtn,
-      ]),
+      el("div", { className: "reader__actions" }, [editBtn, publishBtn]),
     ]);
 
-    // ----- View settings panel -----
-    var sizeDown = button("가−", "글자 작게", function () { stepSize(-1); });
-    var sizeUp = button("가+", "글자 크게", function () { stepSize(1); });
-    var sizeNow = el("span", { className: "panel__value", "aria-live": "polite" });
-    var dayBtn = button("낮", "밝은 화면", function () { setTheme("light"); });
-    var nightBtn = button("밤", "어두운 화면", function () { setTheme("dark"); });
-    var panelRows = [
-      el("div", { className: "panel__row" }, [el("span", { className: "panel__label", text: "글자 크기" }), sizeDown, sizeNow, sizeUp]),
-      el("div", { className: "panel__row" }, [el("span", { className: "panel__label", text: "화면" }), dayBtn, nightBtn]),
-    ];
-    var actionRow = el("div", { className: "panel__row panel__row--actions" });
-    (options.extraActions || []).forEach(function (a) {
-      actionRow.appendChild(button(a.label, a.title, a.onClick));
+    // ----- Published link -----
+    var linkIn = el("input", { type: "text", readonly: "readonly", "aria-label": "책 링크" });
+    var linkStatus = el("span", { className: "reader__replace-done", role: "status" });
+    var copyBtn = button("복사", "링크를 복사합니다", function () {
+      linkIn.select();
+      var done = function () { linkStatus.textContent = "복사됨"; };
+      if (navigator.clipboard) navigator.clipboard.writeText(linkIn.value).then(done, function () {});
+      else if (document.execCommand("copy")) done();
     });
-    if (!options.noPrint) {
-      actionRow.appendChild(button("인쇄 · PDF", "인쇄하거나 PDF로 저장", function () {
-        closePanel();
-        window.print();
-      }));
+    var linkBar = options.onPublish ? el("div", { className: "reader__replace", hidden: "hidden" }, [linkIn, copyBtn, linkStatus]) : null;
+    async function publish() {
+      if (editing) setEditing(false); // saves what was typed
+      publishBtn.disabled = true;
+      linkBar.hidden = false;
+      linkStatus.textContent = "발행 중";
+      try {
+        linkIn.value = await options.onPublish(book);
+        linkStatus.textContent = "발행됨";
+      } catch (e) {
+        linkStatus.textContent = e.message;
+      } finally {
+        publishBtn.disabled = false;
+      }
     }
-    if (actionRow.childNodes.length) panelRows.push(actionRow);
-    var panel = el("div", { className: "reader__panel", id: "reader-panel", role: "dialog", "aria-label": "보기 설정", hidden: "hidden" }, panelRows);
-    viewBtn.addEventListener("click", function () {
-      panel.hidden ? openPanel() : closePanel();
-    });
-    function openPanel() {
-      panel.hidden = false;
-      viewBtn.setAttribute("aria-expanded", "true");
-      var first = panel.querySelector("button:not([disabled])");
-      if (first) first.focus();
-    }
-    function closePanel() {
-      if (panel.hidden) return;
-      panel.hidden = true;
-      viewBtn.setAttribute("aria-expanded", "false");
-    }
-    document.addEventListener("click", function (e) {
-      if (!panel.hidden && !panel.contains(e.target) && e.target !== viewBtn) closePanel();
-    });
-
-    function stepSize(d) {
-      var now = document.documentElement.getAttribute("data-size") || "m";
-      var next = SIZES[Math.min(SIZES.length - 1, Math.max(0, SIZES.indexOf(now) + d))];
-      applySize(next);
-      store(SIZE_KEY, next);
-      syncPanel();
-    }
-    function setTheme(t) {
-      applyTheme(t);
-      store(THEME_KEY, t);
-      syncPanel();
-    }
-    function syncPanel() {
-      var size = document.documentElement.getAttribute("data-size") || "m";
-      sizeNow.textContent = SIZE_NAMES[size];
-      sizeDown.disabled = size === SIZES[0];
-      sizeUp.disabled = size === SIZES[SIZES.length - 1];
-      var dark = isDark();
-      dayBtn.setAttribute("aria-pressed", dark ? "false" : "true");
-      nightBtn.setAttribute("aria-pressed", dark ? "true" : "false");
-    }
-
 
     // ----- Replace all (while editing): a misheard name usually appears in many places -----
     var findIn = el("input", { type: "text", placeholder: "찾을 말", "aria-label": "찾을 말" });
@@ -546,7 +486,7 @@
 
     root.textContent = "";
     root.className = "reader";
-    [top, panel, replaceBar, bar, stage, bottom].forEach(function (n) { if (n) root.appendChild(n); });
+    [top, replaceBar, linkBar, bar, stage, bottom].forEach(function (n) { if (n) root.appendChild(n); });
 
     var sections = stage.querySelectorAll(".page");
 
@@ -594,10 +534,7 @@
 
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
-        if (!panel.hidden) {
-          closePanel();
-          viewBtn.focus();
-        } else if (editing) setEditing(false);
+        if (editing) setEditing(false);
         return;
       }
       if (editing || e.target.isContentEditable || /input|textarea|select/i.test(e.target.tagName)) return;
@@ -671,7 +608,6 @@
       }
     }
 
-    syncPanel();
     go(fromHash(), false);
   }
 
@@ -679,18 +615,6 @@
     var b = el("button", { type: "button", className: "btn", title: title, text: label });
     if (onClick) b.addEventListener("click", onClick);
     return b;
-  }
-
-  function isDark() {
-    var t = document.documentElement.getAttribute("data-theme");
-    if (t) return t === "dark";
-    return window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
-  }
-  function applyTheme(theme) {
-    if (theme === "dark" || theme === "light") document.documentElement.setAttribute("data-theme", theme);
-  }
-  function applySize(size) {
-    document.documentElement.setAttribute("data-size", SIZES.indexOf(size) >= 0 ? size : "m");
   }
 
   window.ChronicleBook = { mount: mount };

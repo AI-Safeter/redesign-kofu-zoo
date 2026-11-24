@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>인생 이야기 전자책</title>
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/book.css">
+</head>
+<body>
+  <div id="book" class="reader"></div>
+
+  <script src="/assets/book-render.js"></script>
+  <script>
+    // A published book: read only, no edit or publish buttons.
+    (async function () {
+      var root = document.getElementById("book");
+      var id = new URLSearchParams(location.search).get("id") || "";
+      var book = null;
+      try {
+        var res = await fetch("/api/read?id=" + encodeURIComponent(id));
+        if (res.ok) book = await res.json();
+      } catch (e) {}
+      if (!book) {
+        root.innerHTML = '<p style="margin:auto;padding:48px 16px;font-family:var(--sans)">책을 찾을 수 없어요.</p>';
+        return;
+      }
+      ChronicleBook.mount(root, book, {});
+    })();
+  </script>
+</body>
+</html>
