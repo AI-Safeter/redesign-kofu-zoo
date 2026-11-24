@@ -468,20 +468,27 @@ export const FIXES_SCHEMA = obj({
  * occurs in the transcript are returned, widened to whole words, and each comes with
  * whether it should be ticked by default.
  */
-export async function findFixes({ settings, transcript, onProgress, signal }) {
+export async function findFixes({ settings, transcript, alt, onProgress, signal }) {
   const { data, model } = await callModel({
     settings,
     transcript,
     userText: `Proofread the transcript above for speech-recognition errors only.
-
+${alt ? `
+A second speech-recognition model transcribed the same recording independently:
+<second_transcription>
+${alt}
+</second_transcription>
+Where the two differ, consider whether the second is clearly right (it sounds alike and makes sense where the first does not). The second model also makes mistakes: never prefer it just because it differs, and ignore differences in spacing, punctuation and fillers.
+` : ""}
 List words that were almost certainly misheard: nonsense words, a word that sounds like the right one but makes no sense here, and misspelled names or terms${settings.terms ? ` (correct spellings given by the user: ${settings.terms})` : ""}.
 Rules:
 - heard: whole words exactly as they appear in the transcript (copy them character for character, including particles attached to the word).
 - meant: the same words corrected, still whole words that read naturally in the sentence.
 - meant must SOUND like heard. Never replace a word just because another word would fit the meaning better.
 - Numbers: change a number only to a value the transcript itself states elsewhere for the same thing; if you think a number is wrong but the transcript does not state the right value, use meant "?" and kind "number".
-- Also flag phrases that make no sense here even though each word is real (e.g. a decade or number that contradicts the topic); use meant "?" when the right words are not clear.
-- meant must be real, standard words.
+- A real word is still a mishearing when it makes the phrase ungrammatical or meaningless where it stands.
+- A year, decade or age that contradicts what the speaker is talking about: meant "?" and kind "number" unless the transcripts make the right words clear.
+- meant must be real, standard words. Never propose a non-standard word; if unsure, use meant "?".
 - Leave colloquial, dialect or nonstandard but real words alone. If a word is a real word that makes sense where it stands, keep it (at most fix its spacing). Do not change style, grammar, word choice or fillers.
 - kind: "term" for names and technical terms, "number" for numbers, otherwise "mishearing".
 - confidence: "high" only when the context leaves no doubt and only one correction is plausible; if two readings are possible, "low".

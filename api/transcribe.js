@@ -8,7 +8,7 @@
 // TRANSCRIBE_PROVIDER=groq|openai|openrouter forces one.
 import { checkAccess, errorResponse, json, isMock } from "./_lib/http.js";
 import { mockTranscribe } from "./_lib/mock.js";
-import { audioFormat, audioModelsEnabled, transcribeWithAudioModels } from "./_lib/audio-llm.js";
+import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels } from "./_lib/audio-llm.js";
 
 const MAX_BYTES = 4_400_000;
 
@@ -57,12 +57,22 @@ export async function POST(request) {
   // Names and terms the user typed. For Whisper they are sent as a bare list: a descriptive
   // prompt sentence made it skip the start of real recordings.
   const hint = (url.searchParams.get("hint") || "").slice(0, 300).trim();
+  // The end of the previous piece's text, as context for the audio models.
+  const prev = (url.searchParams.get("prev") || "").slice(-300).trim();
 
   const provider = transcriptionProvider();
   if (audioModelsEnabled() && audioFormat(type, name)) {
     try {
-      const { text, model } = await transcribeWithAudioModels({ audio, type, name, hint, signal: request.signal });
-      return json({ text: paragraphs(collapseRepeats(text.replace(/\s*\n\s*/g, " "))), engine: model });
+      // The second model runs at the same time; its text only feeds the proofreading step.
+      const second = checkModel();
+      const [main, alt] = await Promise.all([
+        transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal }),
+        second
+          ? transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal, only: second }).catch(() => null)
+          : null,
+      ]);
+      const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
+      return json({ text: tidy(main.text), engine: main.model, alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
     } catch (err) {
       console.warn("Audio models failed, falling back to Whisper:", err.message);
       if (!provider) return errorResponse("음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.", 502);

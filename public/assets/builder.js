@@ -11,7 +11,7 @@
   var JOB_KEY = "chronicle:job";
   var ACCESS_KEY = "chronicle:access";
   var CHAPTER_CONCURRENCY = 3;
-  var TRANSCRIBE_CONCURRENCY = 2; // Groq's free tier allows ~20 requests a minute
+  // Pieces are transcribed one at a time: each gets the previous piece's text as context.
 
   var config = { accessCodeRequired: false, transcription: true, writing: true };
   var audioFile = null;
@@ -229,9 +229,10 @@
   }
 
   // Sends one chunk; waits out rate limits (429 + retryAfter) and retries short outages.
-  async function transcribeChunk(chunk, i, hint, onWait) {
+  async function transcribeChunk(chunk, i, hint, onWait, prev) {
     var url = "/api/transcribe?index=" + i + "&name=" + encodeURIComponent(chunk.name) +
-      (hint ? "&hint=" + encodeURIComponent(hint) : "");
+      (hint ? "&hint=" + encodeURIComponent(hint) : "") +
+      (prev ? "&prev=" + encodeURIComponent(prev.slice(-300)) : "");
     var failures = 0, waits = 0;
     for (;;) {
       var res;
@@ -250,6 +251,7 @@
       try { data = await res.json(); } catch (e) {}
       if (res.ok) {
         if (data.engine && tx) (tx.engines = tx.engines || {})[data.engine] = true;
+        if (tx) (tx.alts = tx.alts || [])[i] = data.alt || "";
         return data.text || "";
       }
       if (res.status === 429 && data.retryAfter && waits++ < 20) {
@@ -285,22 +287,30 @@
       };
       progress();
 
-      await pool(todo, TRANSCRIBE_CONCURRENCY, async function (i) {
+      // One piece at a time, so each piece gets the end of the previous one as context.
+      await pool(todo, 1, async function (i) {
         tx.texts[i] = await transcribeChunk(chunks[i], i, hint, function (sec) {
-          progress("무료 사용량 한도로 " + sec + "초 기다리는 중… ");
-        });
+          progress("사용량 한도로 " + sec + "초 기다리는 중… ");
+        }, i > 0 ? tx.texts[i - 1] : "");
         done++;
         progress();
       });
 
       // Pieces were cut mid-speech: join with a space unless the piece ended a sentence.
-      var text = tx.texts.filter(Boolean).reduce(function (acc, t) {
-        if (!acc) return t;
-        return acc + (/[.?!。요다죠까]$/.test(acc.trim()) ? "\n" : " ") + t;
-      }, "");
+      var join = function (list) {
+        return list.filter(Boolean).reduce(function (acc, t) {
+          if (!acc) return t;
+          var a = acc.trim();
+          var ended = /(다|요|죠|까|네)[.?!]?$|[?!]$/.test(a);
+          if (!ended) a = a.replace(/\.$/, ""); // the piece was cut mid-sentence
+          return a + (ended ? "\n" : " ") + t;
+        }, "");
+      };
+      var text = join(tx.texts);
+      tx.altText = tx.alts ? join(tx.alts) : "";
       setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자. 아래 2단계에서 확인해 주세요.");
+      tx.done = true; // before delivering: proofreading starts right away and needs the second transcription
       deliverTranscript(text);
-      tx.done = true;
     } catch (e) {
       var got = tx ? tx.texts.filter(function (t) { return t != null; }).length : 0;
       setTranscribeProgress(0, "받아쓰기를 마치지 못했습니다: " + e.message + (got ? " (" + got + "개 부분은 받아 두었어요)" : ""), true);
@@ -352,7 +362,11 @@
     $("fixes-status").textContent = "AI가 녹취록을 읽으며 잘못 들린 말을 찾는 중… (1분 안팎)";
     try {
       var res = await withRetry(function () {
-        return streamCall("/api/fixes", { transcript: transcript, settings: settingsFromForm() });
+        return streamCall("/api/fixes", {
+          transcript: transcript,
+          alt: tx && tx.altText && tx.done ? tx.altText : "",
+          settings: settingsFromForm(),
+        });
       }, 2);
       renderFixes(res.fixes || []);
     } catch (e) {

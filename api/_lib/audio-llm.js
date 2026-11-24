@@ -34,9 +34,13 @@ function wavSeconds(buf) {
   return byteRate ? (buf.byteLength - 44) / byteRate : null;
 }
 
-function instructions(hint) {
+function instructions(hint, prev) {
   return [
     "이 오디오는 한국어 인터뷰 녹음의 한 부분입니다. 들리는 말을 처음부터 끝까지 빠짐없이, 요약하거나 고치거나 다듬지 말고 들리는 그대로 받아 적으세요.",
+    // Context from the previous piece: measured to fix words the model can't resolve from a
+    // cut-off start (e.g. "신중년 세대에는" heard as "60년대에는" without it).
+    prev ? `이 부분 바로 앞에서 화자는 이렇게 말했습니다(이미 받아 적었으니 다시 적지 말고, 낱말을 알아듣는 데 참고만 하세요): “${prev}”` : "",
+    "이 부분은 녹음 중간을 잘라낸 것이라 말이 문장 중간에서 시작하거나 끝날 수 있습니다. 끝이 문장 중간에서 끊겼으면 마침표를 찍지 마세요.",
     "말한 순서대로 적고, 문장이 끝나면 마침표나 물음표를 찍으세요.",
     "음악이나 침묵만 있는 부분은 적지 말고, (음악)이나 [웃음] 같은 설명도 넣지 마세요.",
     hint ? `녹음에 나오는 이름과 용어는 이 철자로 적으세요: ${hint}` : "",
@@ -62,14 +66,14 @@ const REFUSAL = /^(죄송|I'?m sorry|I can(no|')t|Sorry)/i;
  * Transcribes one chunk, trying each audio model in turn. Throws when none gives usable text
  * (the caller then falls back to Whisper).
  */
-export async function transcribeWithAudioModels({ audio, type, name, hint, signal }) {
+export async function transcribeWithAudioModels({ audio, type, name, hint, prev, signal, only }) {
   const format = audioFormat(type, name);
   if (!format) throw new Error("unsupported format for audio models");
   const seconds = format === "wav" ? wavSeconds(audio) : null;
   const data = Buffer.from(audio).toString("base64");
   let lastError;
 
-  for (const model of models()) {
+  for (const model of only ? [only] : models()) {
     try {
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -87,7 +91,7 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, signa
             {
               role: "user",
               content: [
-                { type: "text", text: instructions(hint) },
+                { type: "text", text: instructions(hint, prev) },
                 { type: "input_audio", input_audio: { data, format } },
               ],
             },
@@ -113,4 +117,13 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, signa
     }
   }
   throw lastError || new Error("no audio model available");
+}
+
+/**
+ * A second, independent transcription by a different model, used only to point the
+ * proofreading step at words the two models heard differently. Off when set to "".
+ */
+export function checkModel() {
+  const m = process.env.OPENROUTER_AUDIO_CHECK_MODEL;
+  return m === undefined ? "google/gemini-2.5-flash" : m.trim();
 }

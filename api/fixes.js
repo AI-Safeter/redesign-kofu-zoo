@@ -8,7 +8,10 @@ export async function POST(request) {
 
   let input;
   try {
-    input = readSettings(await request.json());
+    const body = await request.json();
+    input = readSettings(body);
+    // A second model's independent transcription, if the browser has one.
+    input.alt = String(body?.alt || "").slice(0, 400_000);
   } catch (err) {
     return errorResponse(err.message || "잘못된 요청입니다.", err.status || 400);
   }
