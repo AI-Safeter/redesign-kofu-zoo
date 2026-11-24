@@ -20,8 +20,7 @@
 
     <nav class="steps-nav" aria-label="책 만들기 단계">
       <a href="#step1-title"><span>1</span>녹음 올리기</a>
-      <a href="#step2-title"><span>2</span>녹취록 확인</a>
-      <a href="#step3-title"><span>3</span>책 정보</a>
+      <a href="#step2-title"><span>2</span>책 정보</a>
     </nav>
 
     <section id="library" class="shelf" hidden>
@@ -60,46 +59,10 @@
           <input id="hint" type="text" placeholder="예: 이옥분, 김재곤, 서천, 평화시장, 10회기" maxlength="300">
         </label>
 
-        <button id="transcribe-btn" type="button" class="primary" disabled>녹음을 글로 옮기기</button>
-        <div id="transcribe-progress" class="progress" hidden>
-          <div class="progress__bar" role="progressbar" aria-label="받아쓰기 진행" aria-valuemin="0" aria-valuemax="100"><span></span></div>
-          <p class="progress__label" role="status"></p>
-          <button id="transcribe-retry" type="button" class="btn" hidden>남은 부분 다시 받아쓰기</button>
-        </div>
       </section>
 
       <section class="step" aria-labelledby="step2-title">
-        <h3 class="step__title" id="step2-title"><span class="step__num">2</span> 녹취록 확인</h3>
-
-        <div id="merge-choice" class="banner" hidden>
-          <p>이미 적혀 있던 녹취록이 있어요. 새로 받아쓴 글을 어떻게 할까요?</p>
-          <div class="banner__actions">
-            <button id="merge-replace" type="button" class="primary">새 글로 바꾸기</button>
-            <button id="merge-append" type="button" class="btn">뒤에 이어 붙이기</button>
-          </div>
-        </div>
-
-        <div class="review">
-        <label class="field">
-          <span class="field__label">녹취록</span>
-          <textarea id="transcript" rows="12" aria-describedby="transcript-count" placeholder="녹음을 글로 옮기면 여기에 나타납니다. 녹취록이 이미 있으면 붙여넣으세요."></textarea>
-          <span class="field__hint" id="transcript-count">0자</span>
-        </label>
-
-        <div class="fixes" id="fixes-box" hidden>
-          <p class="fixes__title" id="fixes-title">잘못 들린 것 같은 말</p>
-          <p class="field__hint" id="fixes-status" role="status"></p>
-          <ul id="fixes-list" class="fixes__list" aria-labelledby="fixes-title"></ul>
-          <button id="fixes-apply" type="button" class="primary" hidden>체크한 것 고치기</button>
-          <button id="fixes-undo" type="button" class="btn" hidden>되돌리기</button>
-          <button id="fixes-retry" type="button" class="btn" hidden>다시 찾기</button>
-        </div>
-        </div>
-
-      </section>
-
-      <section class="step" aria-labelledby="step3-title">
-        <h3 class="step__title" id="step3-title"><span class="step__num">3</span> 책 정보</h3>
+        <h3 class="step__title" id="step2-title"><span class="step__num">2</span> 책 정보</h3>
         <div class="grid2">
           <label class="field">
             <span class="field__label">주인공 이름</span>

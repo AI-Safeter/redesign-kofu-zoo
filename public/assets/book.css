@@ -149,18 +149,6 @@ body { min-height: 100vh; min-height: 100dvh; }
 .panel__row--actions { border-top: 1px solid var(--rule); padding-top: 12px; }
 .panel__row--actions .btn { flex: 1 1 auto; }
 
-.reader__editnote {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  padding: 8px 16px;
-  background: var(--accent-soft);
-  font: 0.95rem/1.5 var(--sans);
-  text-align: center;
-}
-
 .reader__progress { height: 3px; background: var(--rule); }
 .reader__progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s ease; }
 
@@ -483,7 +471,7 @@ body { min-height: 100vh; min-height: 100dvh; }
     --paper: #fff; --page: #fff; --ink: #000; --ink-soft: #333; --muted: #555; --rule: #ccc; --accent: #2c4a78; --accent-soft: #eef1f6;
     --text-size: 10.5pt; --leading: 1.8; color-scheme: light;
   }
-  .reader__top, .reader__nav, .reader__progress, .reader__editnote, .reader__panel, .verify-note { display: none !important; }
+  .reader__top, .reader__nav, .reader__progress, .reader__panel, .verify-note { display: none !important; }
   .reader__stage { display: block; padding: 0; }
   .page { display: block !important; box-shadow: none; max-width: none; animation: none !important; break-after: page; }
   .page:last-child { break-after: auto; }

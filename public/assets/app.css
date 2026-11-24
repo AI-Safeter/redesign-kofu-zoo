@@ -157,7 +157,6 @@ input[type="text"], input[type="password"], select, textarea {
 input::placeholder, textarea::placeholder { color: var(--ink-3); }
 input:focus, select:focus, textarea:focus { outline: 2px solid transparent; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 textarea { resize: vertical; line-height: 1.75; }
-#transcript { min-height: 320px; }
 [aria-invalid="true"] { border-color: var(--danger); }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
@@ -233,47 +232,8 @@ textarea { resize: vertical; line-height: 1.75; }
 .link-btn:hover { color: var(--ink); }
 
 /* ---------- Progress ---------- */
-.progress { margin-top: 16px; max-width: 46em; }
 .progress__bar { height: 6px; border-radius: 999px; background: var(--well); overflow: hidden; }
 .progress__bar span { display: block; height: 100%; width: 0; background: var(--primary); transition: width 0.4s ease; }
-.progress__label { margin: 10px 0 0; font-size: 0.9rem; color: var(--ink-2); }
-.progress.is-error .progress__label { color: var(--danger); font-weight: 500; }
-.progress .btn { margin-top: 12px; }
-.progress.is-indeterminate .progress__bar span { width: 30% !important; animation: indeterminate 1.2s ease-in-out infinite; }
-@keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
-
-/* ---------- Transcript review & AI suggestions ---------- */
-.fixes { margin: 4px 0 16px; padding: 16px; background: var(--well); border-radius: 10px; }
-.fixes__title { margin: 0; font-weight: 600; font-size: 0.95rem; }
-.fixes .field__hint { margin: 6px 0 0; }
-.fixes__list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
-.fixes__list:empty { display: none; }
-.fixes__list label {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr); /* a long unspaced word must wrap, not widen the page */
-  gap: 4px 12px;
-  align-items: start;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--page);
-  border: 1px solid var(--line);
-  cursor: pointer;
-}
-.fixes__list input { margin-top: 0.3em; width: 18px; height: 18px; accent-color: var(--primary); }
-.fixes__change { font-size: 0.95rem; }
-.fixes__change del { color: var(--ink-3); }
-.fixes__change ins { text-decoration: none; font-weight: 700; }
-.fixes__why { grid-column: 2; font-size: 0.84rem; color: var(--ink-3); line-height: 1.6; }
-.fixes__why mark { background: var(--primary-tint); color: var(--ink); padding: 0 3px; border-radius: 3px; }
-.fixes__list li.is-applied { opacity: 0.5; }
-.fixes button { margin: 12px 8px 0 0; }
-.fixes .primary:disabled { background: var(--page); box-shadow: inset 0 0 0 1px var(--line); }
-@media (min-width: 1024px) {
-  #transcript { min-height: 460px; }
-  /* Suggestions sit beside the transcript and stay in view while it is read. */
-  .review:has(#fixes-box:not([hidden])) { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
-  .review .fixes { margin-top: 27px; position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; }
-}
 
 /* ---------- Main action & book progress ---------- */
 .actions { padding-top: 24px; border-top: 1px solid var(--line); }

@@ -425,6 +425,7 @@
 
     // ----- Top bar: home, title, contents, view settings -----
     var viewBtn = button("보기 설정", "글자 크기, 밤 모드, 저장과 인쇄", null);
+    var editBtn = options.onChange ? button("글 고치기", "본문을 직접 고칩니다", function () { setEditing(!editing); }) : null;
     viewBtn.setAttribute("aria-expanded", "false");
     viewBtn.setAttribute("aria-controls", "reader-panel");
     var top = el("header", { className: "reader__top" }, [
@@ -434,6 +435,7 @@
       el("p", { className: "reader__title", text: book.title || "" }),
       el("div", { className: "reader__actions" }, [
         button("차례", "차례로 가기", function () { go(1, true); }),
+        editBtn,
         viewBtn,
       ]),
     ]);
@@ -449,14 +451,6 @@
       el("div", { className: "panel__row" }, [el("span", { className: "panel__label", text: "화면" }), dayBtn, nightBtn]),
     ];
     var actionRow = el("div", { className: "panel__row panel__row--actions" });
-    var editBtn;
-    if (options.onChange) {
-      editBtn = button("글 고치기", "본문을 직접 고칩니다", function () {
-        setEditing(!editing);
-        closePanel();
-      });
-      actionRow.appendChild(editBtn);
-    }
     (options.extraActions || []).forEach(function (a) {
       actionRow.appendChild(button(a.label, a.title, a.onClick));
     });
@@ -508,11 +502,6 @@
       nightBtn.setAttribute("aria-pressed", dark ? "true" : "false");
     }
 
-    var editNote = el("div", { className: "reader__editnote", role: "status", hidden: "hidden" }, [
-      el("span", { text: "글 고치는 중입니다. 고칠 글자를 눌러 바로 고치세요. 자동으로 저장됩니다." }),
-    ]);
-    var doneBtn = button("고치기 끝", "고치기를 마칩니다", function () { setEditing(false); });
-    editNote.appendChild(doneBtn);
 
     // ----- Pages -----
     var stage = el("main", { className: "reader__stage" });
@@ -536,7 +525,7 @@
 
     root.textContent = "";
     root.className = "reader";
-    [top, panel, editNote, bar, stage, bottom].forEach(function (n) { root.appendChild(n); });
+    [top, panel, bar, stage, bottom].forEach(function (n) { root.appendChild(n); });
 
     var sections = stage.querySelectorAll(".page");
 
@@ -646,7 +635,6 @@
     function setEditing(on) {
       editing = on;
       root.classList.toggle("is-editing", on);
-      editNote.hidden = !on;
       if (editBtn) editBtn.textContent = on ? "고치기 끝" : "글 고치기";
       stage.querySelectorAll("[data-path]").forEach(function (n) {
         if (on) n.setAttribute("contenteditable", "plaintext-only");
