@@ -1037,7 +1037,6 @@
       problems.push("지금은 책 쓰기 기능을 쓸 수 없어요.");
       console.warn("Writing disabled: set OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
     }
-    if (config.mock) problems.push("시험 모드입니다. 실제 AI 대신 샘플 내용으로 동작합니다.");
     if (problems.length && $("notice").hidden) showNotice(problems);
     $("make-btn").disabled = !config.writing;
   }

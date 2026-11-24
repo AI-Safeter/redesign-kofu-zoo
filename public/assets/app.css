@@ -19,20 +19,7 @@ body { font-family: var(--sans); line-height: 1.6; }
 .wrap { max-width: 880px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); }
 
 .hero { padding: 20px 0 28px; }
-.hero h1 { font: 700 clamp(1.7rem, 5.5vw, 2.6rem)/1.35 var(--serif); letter-spacing: -0.02em; margin: 0 0 16px; word-break: keep-all; text-wrap: balance; }
-.hero p { color: var(--ink-soft); max-width: 40em; margin: 0 0 20px; word-break: keep-all; }
-.hero__steps { display: flex; flex-wrap: wrap; gap: 8px 20px; list-style: none; margin: 0; padding: 0; color: var(--ink-soft); font-size: 0.95rem; }
-.hero__steps b {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--page);
-  font-size: 0.8rem;
-}
+.hero h1 { font: 700 clamp(1.7rem, 5.5vw, 2.6rem)/1.35 var(--serif); letter-spacing: -0.02em; margin: 0; word-break: keep-all; text-wrap: balance; }
 
 .card {
   background: var(--page);
