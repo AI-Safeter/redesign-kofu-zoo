@@ -96,7 +96,7 @@ function systemPrompt(settings) {
   return `You are an experienced Korean memoir writer (자서전 작가). You turn a recorded interview into a short e-book about one person: a chronicle of their life in time order when the interview is a life story, or a faithful record of their work and ideas when the interview is mainly about that.
 
 # Ground rules
-- Use only what the interview supports. Never invent people, names, dates, places, events, dialogue or feelings. If the interviewee is unsure of a year, say so ("1960년대 중반 무렵"). If something is missing, leave it out rather than fill the gap.
+- Use only what the interview supports. Never invent people, names, dates, places, events, dialogue or feelings. If the interviewee is unsure of a year, say so ("1960년대 중반 무렵"). If something is missing, leave it out rather than fill the gap — and never write about what is missing or unknown (no "기록에 남아 있지 않다", "알려지지 않았다", "인터뷰 일자는 확인되지 않는다"); simply don't mention it.
 - The transcript was produced by automatic speech recognition. It has no speaker labels, mixes the interviewer's questions with the interviewee's answers, and may contain misheard words. Work out who is speaking from context. Fix an obvious misrecognition only when the context makes the intended word clear.
 ${settings.voice === "oral"
     ? `- This book is the speaker's own words, edited for reading: keep what they said, in their order and their register (~합니다/~해요). Remove fillers (음, 어, 뭐, 이제, 좀, 사실, 그냥, 막, 이렇게, 굉장히, 어떤, 무슨) and repetition; split run-on sentences; fix slips that make a sentence ungrammatical without changing their words (e.g. "지금의 나는 상태는" → "지금 나의 상태는"). Do not add any claim, reason, example, summary or conclusion they did not say. Use no quotation marks and no "~라는 말처럼".`
@@ -146,9 +146,8 @@ function outlineRequest(settings, transcript) {
   - quotes: the interviewee's best verbatim lines for this chapter. Each quote is used in exactly one chapter.
   - notes: a brief for the chapter writer — details, people, places and dates from the transcript that belong here.
 - timeline: key events with a year or age the speaker actually stated, in order (at most 16). Use [] if there are none, which is normal for kind "work". year: the four-digit year (or "" if unknown); approx: true when the year is estimated (e.g. computed from an age) rather than stated; chapter: the number of the chapter it belongs to (1-based); event: a short phrase.
-- keyTerms: for kind "work" or "mixed", 3–8 entries: first an "개요" entry with the basic facts and numbers exactly as stated (e.g. how many sessions, people, months), then key ideas, methods or names the speaker explained, including the goals and the flow of the work if they described them (term: as they named it, correctly spelled; note: one short line from the interview). [] for kind "life".
 - lastWords: the interviewee's message to family, to future generations, or to people who will do the same work, verbatim from the transcript, split into short paragraphs; skip sentences that look garbled or misheard. Empty list if there is none. These words will appear on their own page, so do not plan to use them elsewhere.
-- prologue ("책을 펴내며"): 1–2 short paragraphs, in the third person, about the occasion: who this person is in one line, who sat down with them and when, why this book exists. Do not list years or events; the chapters do that. State only what the interview says: no track record, history, achievements or manner ("차분히", "독자적") they did not mention, and keep their tense (something planned is not something already done).
+- prologue ("책을 펴내며"): 1–2 short paragraphs, in the third person, about the occasion: who this person is in one line, who sat down with them and when (only if known — otherwise don't mention it at all), why this book exists. Do not list years or events; the chapters do that. State only what the interview says: no track record, history, achievements or manner ("차분히", "독자적") they did not mention, and keep their tense (something planned is not something already done).
 - epilogue: one paragraph of reflection on what this life or work shows. No new events and no repeating the lastWords.
 
 ${FAITHFULNESS_CHECKLIST}`;
@@ -232,7 +231,6 @@ export const OUTLINE_SCHEMA = obj({
     items: obj({ title: str, startsWith: str, yearFrom: str, yearTo: str, place: str, summary: str, events: strArray, quotes: strArray, notes: str }),
   },
   timeline: { type: "array", items: obj({ year: str, approx: { type: "boolean" }, chapter: { type: "integer" }, event: str }) },
-  keyTerms: { type: "array", items: obj({ term: str, note: str }) },
   lastWords: strArray,
   prologue: strArray,
   epilogue: strArray,
@@ -367,7 +365,7 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
   const outline = normalizeOutline(data, index, chapterLimit(settings, transcript), settings);
   if (settings.voice === "oral") assignSpans(outline, transcript);
   // Sentences in the framing texts that the interview doesn't support, for the family to check.
-  outline.frameUnsupported = [...outline.prologue, ...outline.epilogue, ...outline.keyTerms.map((k) => k.note)]
+  outline.frameUnsupported = [...outline.prologue, ...outline.epilogue]
     .flatMap((p) => p.match(/[^.!?。]+[.!?。]?/g) || [])
     .filter((s) => norm_(s).length >= 8 && ((RISKY.test(s) && support(s, index) < 0.35) || numberMismatch(s, index)))
     .map((s) => s.trim());
@@ -643,6 +641,14 @@ const year = (v) => {
   return m ? m[1] : "";
 };
 
+// Sentences about what the interview doesn't say ("인터뷰 일자와 인터뷰어는 기록에 남아 있지
+// 않다") are noise in a book; they are removed wherever the model writes them.
+const ABOUT_MISSING = /(남아\s?있지\s?않|알려지지\s?않|알려져\s?있지\s?않|확인되지\s?않|확인할\s?수\s?없|언급되지\s?않|밝혀지지\s?않|나와\s?있지\s?않|알\s?수\s?없)/;
+function withoutMissingTalk(text) {
+  const sentences = String(text).match(/[^.!?。]+[.!?。]?["”’']?\s*/g) || [text];
+  return sentences.filter((x) => !ABOUT_MISSING.test(x)).join("").trim();
+}
+
 function paragraphs(v) {
   if (Array.isArray(v)) return v.map(text).filter(Boolean);
   return text(v)
@@ -727,13 +733,9 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
     chapters,
     // A timeline with no dated entries is just a second table of contents: leave it out.
     timeline: timeline.some((t) => t.year) ? timeline : [],
-    keyTerms: list(d.keyTerms)
-      .filter((k) => k && typeof k === "object" && text(k.term))
-      .map((k) => ({ term: text(k.term), note: text(k.note) }))
-      .slice(0, 8),
     lastWords,
-    prologue: paragraphs(d.prologue),
-    epilogue: paragraphs(d.epilogue),
+    prologue: paragraphs(d.prologue).map(withoutMissingTalk).filter(Boolean),
+    epilogue: paragraphs(d.epilogue).map(withoutMissingTalk).filter(Boolean),
   };
 }
 

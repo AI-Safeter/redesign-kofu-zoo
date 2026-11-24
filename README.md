@@ -4,7 +4,7 @@ Upload a recorded interview (Korean) and get an HTML e-book that chronicles one 
 
 - **Cover**, **contents**, **이 책의 사람들** (the people in the story), **책을 펴내며** (preface with an epigraph in their own words)
 - **3–8 chapters**, each opening with its years, the person's age and the place (e.g. "1955–1972 · 출생–17세 · 경북 안동"), a pull quote, and an **인터뷰에서** box with a real question and answer from the recording
-- **남기고 싶은 말** (their message to the family, verbatim), **연보** (timeline grouped by chapter, with ages), **에필로그**, and a colophon with the interview details
+- **남기고 싶은 말** (their message to the family, verbatim), **연보** (timeline grouped by chapter, with ages) and **에필로그**
 
 - **Sample book:** `/book?sample` (a fictional person, written by hand to show the format)
 - **Builder:** `/` (upload audio → review and correct the transcript → generate → read, edit, save as a file or PDF)

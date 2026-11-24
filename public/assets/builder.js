@@ -816,7 +816,6 @@
           missing: w.missing || [],
         };
       }),
-      keyTerms: o.keyTerms || [],
       frameUnsupported: o.frameUnsupported || [],
       lastWords: o.lastWords,
       timeline: o.timeline,

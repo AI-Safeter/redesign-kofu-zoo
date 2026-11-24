@@ -88,13 +88,8 @@
     (book.chapters || []).forEach(function (c, i) {
       out += h("h2", "제" + (i + 1) + "장 " + c.title) + paras(c.paragraphs);
     });
-    if (book.keyTerms && book.keyTerms.length) {
-      out += h("h2", "한눈에 보기") + book.keyTerms.map(function (k) { return "<p><b>" + esc(k.term) + "</b> — " + esc(k.note) + "</p>"; }).join("");
-    }
     if (book.lastWords && book.lastWords.length) out += h("h2", book.kind === "work" ? "맺는 말" : "남기고 싶은 말") + paras(book.lastWords);
     if (book.epilogue && book.epilogue.length) out += h("h2", "에필로그") + paras(book.epilogue);
-    var m = book.meta || {};
-    out += "<hr>" + h("p", m.origin || "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 썼습니다. 인용은 녹취록과 대조했지만, 받아쓰기 오류가 남아 있을 수 있습니다.");
     return out;
   }
 

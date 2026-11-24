@@ -33,7 +33,7 @@ export async function mockOutline(settings, onProgress) {
   }));
   const { title, subtitle, subjectName, birthYear, birthplace, epigraph, people, prologue, timeline, lastWords, epilogue } = book;
   return {
-    outline: { kind: "life", speakerRole: "", speaksAs: "나", keyTerms: [], title, subtitle, subjectName, birthYear, birthplace, epigraph, people, prologue, chapters, timeline: timeline.filter((t) => t.chapter <= chapters.length), lastWords, epilogue },
+    outline: { kind: "life", speakerRole: "", speaksAs: "나", title, subtitle, subjectName, birthYear, birthplace, epigraph, people, prologue, chapters, timeline: timeline.filter((t) => t.chapter <= chapters.length), lastWords, epilogue },
     model: "mock",
   };
 }
