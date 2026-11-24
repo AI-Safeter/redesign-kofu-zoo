@@ -416,7 +416,12 @@
       if (navigator.clipboard) navigator.clipboard.writeText(linkIn.value).then(done, function () {});
       else if (document.execCommand("copy")) done();
     });
-    var linkBar = options.onPublish ? el("div", { className: "reader__replace", hidden: "hidden" }, [linkIn, copyBtn, linkStatus]) : null;
+    var unpublishBtn = options.onUnpublish ? button("발행 취소", "발행한 책을 지웁니다", unpublish) : null;
+    var linkBar = options.onPublish ? el("div", { className: "reader__replace", hidden: "hidden" }, [linkIn, copyBtn, unpublishBtn, linkStatus]) : null;
+    if (linkBar && options.publishedUrl) {
+      linkBar.hidden = false;
+      linkIn.value = options.publishedUrl;
+    }
     async function publish() {
       if (editing) setEditing(false); // saves what was typed
       publishBtn.disabled = true;
@@ -429,6 +434,21 @@
         linkStatus.textContent = e.message;
       } finally {
         publishBtn.disabled = false;
+      }
+    }
+    async function unpublish() {
+      if (!confirm("발행한 책을 지울까요?")) return;
+      unpublishBtn.disabled = true;
+      linkStatus.textContent = "지우는 중";
+      try {
+        await options.onUnpublish(book);
+        linkBar.hidden = true;
+        linkIn.value = "";
+        linkStatus.textContent = "";
+      } catch (e) {
+        linkStatus.textContent = e.message;
+      } finally {
+        unpublishBtn.disabled = false;
       }
     }
 

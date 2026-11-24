@@ -382,7 +382,7 @@
       $("access").focus();
       return;
     }
-    sset(sessionStorage, ACCESS_KEY, $("access").value.trim());
+    sset(localStorage, ACCESS_KEY, $("access").value.trim()); // remembered on this device
 
     // Long recordings can crash a phone's browser while decoding.
     if (coarsePointer && !(tx && tx.file === audioFile)) {
@@ -724,7 +724,7 @@
       }
     } catch (e) {}
     restoreSavedWork();
-    $("access").value = sget(sessionStorage, ACCESS_KEY) || "";
+    $("access").value = sget(localStorage, ACCESS_KEY) || "";
 
     try {
       var res = await fetch("/api/config");

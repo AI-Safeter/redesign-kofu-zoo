@@ -107,7 +107,7 @@ api/
   outline.js            transcript → book plan
   chapter.js            transcript + plan → one chapter
   fixes.js              transcript → suggested corrections of mishearings
-  publish.js            book → read-only page in Vercel Blob (same link when published again)
+  publish.js            book → read-only page in Vercel Blob (same link when published again); DELETE removes it
   read.js               published book for /read?id=…
   _lib/books.js         Vercel Blob storage (in memory with MOCK_AI=1)
   _lib/writer.js        prompts, JSON schemas, Claude calls, output clean-up and checks

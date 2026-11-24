@@ -62,25 +62,50 @@
             }
           : null,
         onPublish: editable && config.publishing ? publish : null,
+        onUnpublish: editable && config.publishing ? unpublish : null,
+        publishedUrl: book.published ? linkTo(book.published.id) : null,
       });
+
+      function linkTo(id) { return location.origin + "/read?id=" + id; }
+
+      // Calls /api/publish with the access code this device remembers; asks for it once if it
+      // is missing or wrong.
+      async function call(method, body) {
+        var code = "";
+        try { code = localStorage.getItem("chronicle:access") || ""; } catch (e) {}
+        for (var tries = 0; ; tries++) {
+          var res = await fetch("/api/publish", {
+            method: method,
+            headers: Object.assign({ "content-type": "application/json" }, code ? { "x-access-code": encodeURIComponent(code) } : {}),
+            body: JSON.stringify(body),
+          });
+          var data = {};
+          try { data = await res.json(); } catch (e) {}
+          if (res.status === 401 && tries === 0) {
+            code = (prompt("접근 코드") || "").trim();
+            try { localStorage.setItem("chronicle:access", code); } catch (e) {}
+            if (code) continue;
+          }
+          if (!res.ok) throw new Error(data.error || "다시 시도해 주세요.");
+          return data;
+        }
+      }
 
       // Uploads the book as a read-only page; publishing again updates the same link.
       async function publish(b) {
         var copy = Object.assign({}, b);
         delete copy.published;
-        var code = "";
-        try { code = sessionStorage.getItem("chronicle:access") || ""; } catch (e) {}
-        var res = await fetch("/api/publish", {
-          method: "POST",
-          headers: Object.assign({ "content-type": "application/json" }, code ? { "x-access-code": encodeURIComponent(code) } : {}),
-          body: JSON.stringify({ book: copy, id: b.published && b.published.id, token: b.published && b.published.token }),
-        });
-        var data = {};
-        try { data = await res.json(); } catch (e) {}
-        if (!res.ok) throw new Error(data.error || "발행하지 못했어요.");
-        b.published = { id: data.id, token: data.token || b.published.token };
+        var p = b.published || {};
+        var data = await call("POST", { book: copy, id: p.id, token: p.token });
+        b.published = { id: data.id, token: data.token || p.token };
         Library.save(b);
-        return location.origin + "/read?id=" + data.id;
+        return linkTo(data.id);
+      }
+
+      async function unpublish(b) {
+        await call("DELETE", { id: b.published.id, token: b.published.token });
+        delete b.published;
+        Library.save(b);
       }
     })();
   </script>

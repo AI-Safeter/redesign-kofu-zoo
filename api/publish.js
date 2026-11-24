@@ -1,8 +1,8 @@
 // Publishes a book as a read-only page (/read?id=…). Publishing again with the id and the
-// edit token returned the first time replaces the same page.
+// edit token returned the first time replaces the same page; DELETE with them removes it.
 import { createHash, randomBytes } from "node:crypto";
 import { checkAccess, errorResponse, json } from "./_lib/http.js";
-import { canPublish, loadBook, saveBook } from "./_lib/books.js";
+import { canPublish, deleteBook, loadBook, saveBook } from "./_lib/books.js";
 
 const MAX_BYTES = 3_000_000;
 const ID = /^[A-Za-z0-9_-]{12}$/;
@@ -40,6 +40,24 @@ export async function POST(request) {
 
   await saveBook(id, { ...readerCopy(book), editHash: hash(token || body.token), publishedAt: new Date().toISOString() });
   return json({ id, token }); // token only the first time; the browser keeps it with the book
+}
+
+export async function DELETE(request) {
+  const denied = checkAccess(request);
+  if (denied) return denied;
+  if (!canPublish()) return errorResponse("발행 기능이 설정되지 않았어요.", 503);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse("잘못된 요청입니다.");
+  }
+  if (!ID.test(body?.id || "")) return errorResponse("잘못된 요청입니다.");
+  const existing = await loadBook(body.id);
+  if (!existing) return json({ deleted: true }); // already gone
+  if (existing.editHash !== hash(body.token)) return errorResponse("이 책을 지울 권한이 없어요.", 403);
+  await deleteBook(body.id);
+  return json({ deleted: true });
 }
 
 /** Only what the reader shows: no interview settings, model names or check lists. */

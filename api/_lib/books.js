@@ -1,6 +1,6 @@
 // Published books: one JSON file per book in Vercel Blob (BLOB_READ_WRITE_TOKEN, set when a
 // Blob store is connected to the project), or in this server's memory with MOCK_AI=1.
-import { get, put } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 import { isMock } from "./http.js";
 
 const memory = new Map(); // MOCK_AI only: lost when the dev server restarts
@@ -21,6 +21,11 @@ export async function saveBook(id, data) {
     contentType: "application/json",
     cacheControlMaxAge: 60, // a re-published book shows within about a minute
   });
+}
+
+export async function deleteBook(id) {
+  if (isMock()) return void memory.delete(id);
+  await del(pathOf(id));
 }
 
 /** The stored book, or null when there is none with this id. */
