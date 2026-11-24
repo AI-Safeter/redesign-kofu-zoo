@@ -38,6 +38,15 @@ export async function mockOutline(settings, onProgress) {
   };
 }
 
+export async function mockFixes(transcript) {
+  return {
+    fixes: transcript.includes("갯벌")
+      ? [{ heard: "갯벌", meant: "갯벌", kind: "mishearing", checked: false, why: "(시험 모드 예시 — 실제로는 잘못 들린 말만 보여 줍니다)" }]
+      : [],
+    model: "mock",
+  };
+}
+
 export async function mockChapter(index, onProgress) {
   const book = await sample();
   for (let i = 1; i <= 4; i++) {

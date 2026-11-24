@@ -59,7 +59,6 @@ export function readSettings(body) {
       terms: clip(s.terms, 300),
       // The most chapters to write; the outline may use fewer when the interview is short.
       chapters: Math.min(8, Math.max(1, parseInt(s.chapters, 10) || 6)),
-      notes: clip(s.notes, 1000),
     },
   };
 }
@@ -70,7 +69,7 @@ const clip = (v, n) => String(v || "").trim().slice(0, n);
  * The most chapters this interview can fill: roughly one per 1,500 characters of transcript,
  * so a short interview becomes a short book instead of a padded one.
  */
-export function chapterLimit(settings, transcript) {
+function chapterLimit(settings, transcript) {
   const per = settings.voice === "oral" ? 1000 : 1500;
   return Math.min(settings.chapters, Math.max(1, Math.round(transcript.length / per)));
 }
@@ -122,8 +121,8 @@ ${settings.voice === "oral"
 - The speaker's title/affiliation: ${settings.subjectRole || "(not given — take it from the interview if stated)"}
 - Interviewer: ${settings.interviewer || "(not given)"}
 - Interview date: ${settings.interviewDate || "(not given)"}
-${settings.terms ? `- Correct spellings of names and terms in this recording (use exactly these): ${settings.terms}` : ""}
-${settings.notes ? `- Notes from the person making the book: ${settings.notes}` : ""}`.trim();
+- Interview place: ${settings.interviewPlace || "(not given)"}
+${settings.terms ? `- Correct spellings of names and terms in this recording (use exactly these): ${settings.terms}` : ""}`.trim();
 }
 
 const transcriptBlock = (transcript) => `<transcript>\n${transcript}\n</transcript>`;
@@ -220,7 +219,7 @@ const obj = (properties) => ({
   properties,
 });
 
-export const OUTLINE_SCHEMA = obj({
+const OUTLINE_SCHEMA = obj({
   kind: { type: "string", enum: ["life", "work", "mixed"] },
   speakerRole: str,
   speaksAs: { type: "string", enum: ["나", "우리"] },
@@ -241,7 +240,7 @@ export const OUTLINE_SCHEMA = obj({
   epilogue: strArray,
 });
 
-export const CHAPTER_SCHEMA = obj({
+const CHAPTER_SCHEMA = obj({
   paragraphs: strArray,
   pullQuote: obj({ text: str, context: str }),
   excerpt: obj({ q: str, a: str }),
@@ -336,17 +335,16 @@ function assignSpans(outline, transcript) {
   const pos = [];
   let flat = "";
   for (let i = 0; i < transcript.length; i++) {
-    const c = transcript[i].toLowerCase();
-    if (/[가-힣a-z0-9]/.test(c)) {
+    const c = norm_(transcript[i]);
+    if (c) {
       flat += c;
       pos.push(i);
     }
   }
   const find = (phrase, after) => {
-    const n = norm_(phrase).toLowerCase();
+    const n = norm_(phrase);
     if (n.length < 8) return -1; // too short to locate reliably: fall back to the notes
     for (const len of [24, 16, 10]) {
-      if (n.length < len && len !== 10) continue;
       const at = flat.indexOf(n.slice(0, len), after);
       if (at >= 0) return at;
     }
@@ -382,8 +380,7 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
     signal,
     deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
-  const index = indexTranscript(transcript);
-  index.numbers = numbersIn(transcript);
+  const index = indexWithNumbers(transcript);
   const outline = normalizeOutline(data, index, chapterLimit(settings, transcript), settings);
   if (settings.voice === "oral") assignSpans(outline, transcript);
   // Sentences in the framing texts that the interview doesn't support, for the family to check.
@@ -401,99 +398,58 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
   const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal?.aborted;
   outline = normalizeOutline(outline, null, 8, settings); // the browser sends it back; never trust its shape
   if (!outline.chapters[chapterIndex]) throw fail("잘못된 장 번호입니다.", 400);
-  const transcriptIndex = indexTranscript(transcript);
-  transcriptIndex.numbers = numbersIn(transcript);
-  let { data, model } = await callModel({
-    settings,
-    transcript,
-    userText: chapterRequest(outline, chapterIndex, transcript, settings),
-    schema: CHAPTER_SCHEMA,
-    schemaName: "book_chapter",
-    onProgress,
-    signal,
-    deadline,
-  });
-  let chapter = normalizeChapter(data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
+  const transcriptIndex = indexWithNumbers(transcript);
+  const plan = outline.chapters[chapterIndex];
+  const request = chapterRequest(outline, chapterIndex, transcript, settings);
+  const ask = (feedback) =>
+    callModel({ settings, transcript, userText: request + feedback, schema: CHAPTER_SCHEMA, schemaName: "book_chapter", onProgress, signal, deadline });
+  let { data, model } = await ask("");
+  let chapter = normalizeChapter(data, transcriptIndex, plan, outline, settings);
+  // Asks once more with feedback; keeps the new draft only when it has text and `better` holds.
+  const tryAgain = async (feedback, better) => {
+    const retry = await ask("\n\n" + feedback).catch(() => null);
+    if (!retry) return false;
+    const again = normalizeChapter(retry.data, transcriptIndex, plan, outline, settings);
+    if (!again.paragraphs.length || !better(again)) return false;
+    chapter = again;
+    model = retry.model;
+    return true;
+  };
 
-  // A chapter that is mostly pasted quotations is not writing: ask once more, with feedback.
+  // A chapter that is mostly pasted quotations is not writing.
   if (settings.voice !== "oral" && chapter.quotedShare > 0.45 && canRetry()) {
-    const retry = await callModel({
-      settings,
-      transcript,
-      userText:
-        chapterRequest(outline, chapterIndex, transcript, settings) +
-        `\n\nYour previous draft was ${Math.round(chapter.quotedShare * 100)}% quotations. Rewrite it mostly in your own narration, with at most two short quotations.`,
-      schema: CHAPTER_SCHEMA,
-      schemaName: "book_chapter",
-      onProgress,
-      signal,
-      deadline,
-    }).catch(() => null);
-    if (retry) {
-      const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
-      if (again.paragraphs.length && again.quotedShare < chapter.quotedShare) {
-        chapter = again;
-        model = retry.model;
-      }
-    }
+    await tryAgain(
+      `Your previous draft was ${Math.round(chapter.quotedShare * 100)}% quotations. Rewrite it mostly in your own narration, with at most two short quotations.`,
+      (again) => again.quotedShare < chapter.quotedShare,
+    );
   }
   // 구술 정리 that still reads like raw speech ("뭐 … 이제 … 막") gets one more editing pass.
   if (settings.voice === "oral" && fillerDensity(chapter.paragraphs) > 3 && canRetry()) {
-    const retry = await callModel({
-      settings,
-      transcript,
-      userText:
-        chapterRequest(outline, chapterIndex, transcript, settings) +
-        "\n\nYour previous draft still read like raw speech, full of fillers (뭐, 이제, 막, 좀). Edit it properly for reading: remove the fillers and repetition and split run-on sentences, without adding anything.",
-      schema: CHAPTER_SCHEMA,
-      schemaName: "book_chapter",
-      onProgress,
-      signal,
-      deadline,
-    }).catch(() => null);
-    if (retry) {
-      const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
-      if (again.paragraphs.length && fillerDensity(again.paragraphs) < fillerDensity(chapter.paragraphs)) {
-        chapter = again;
-        model = retry.model;
-      }
-    }
+    await tryAgain(
+      "Your previous draft still read like raw speech, full of fillers (뭐, 이제, 막, 좀). Edit it properly for reading: remove the fillers and repetition and split run-on sentences, without adding anything.",
+      (again) => fillerDensity(again.paragraphs) < fillerDensity(chapter.paragraphs),
+    );
   }
   // 구술 정리: find the passage's sentences that didn't make it into the chapter. If much is
   // missing, ask once more naming them; whatever is still missing is listed in edit mode.
-  const span = outline.chapters[chapterIndex].span;
-  if (settings.voice === "oral" && span) {
-    const reserved = [...list(outline.lastWords), outline.epigraph].filter(Boolean);
-    const passageSentences = (transcript.slice(span.from, span.to).match(/[^.!?。\n]+[.!?。]?/g) || [])
+  if (settings.voice === "oral" && plan.span) {
+    const reserved = reservedLines(outline);
+    const passageSentences = (transcript.slice(plan.span.from, plan.span.to).match(/[^.!?。\n]+[.!?。]?/g) || [])
       .map((x) => x.trim())
       .filter((x) => norm_(x).length >= 15 && !reserved.some((r) => similarity(r, x) > 0.5));
     const missingFrom = (ch) => {
       const written = indexTranscript(ch.paragraphs.join(" "));
       return passageSentences.filter((x) => support(x, written) < 0.35);
     };
-    let missing = missingFrom(chapter);
     const share = (m) => m.join("").length / Math.max(1, passageSentences.join("").length);
+    let missing = missingFrom(chapter);
     if (share(missing) > 0.2 && canRetry()) {
-      const retry = await callModel({
-        settings,
-        transcript,
-        userText:
-          chapterRequest(outline, chapterIndex, transcript, settings) +
-          `\n\nYour previous draft left out parts of the passage. Include all of it, edited for reading, in order — in particular:\n${missing.map((m) => `- ${m}`).join("\n")}`,
-        schema: CHAPTER_SCHEMA,
-        schemaName: "book_chapter",
-        onProgress,
-        signal,
-      }).catch(() => null);
-      if (retry) {
-        const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
-        const againMissing = again.paragraphs.length ? missingFrom(again) : missing;
-        if (share(againMissing) < share(missing) && again.unsupported.length <= chapter.unsupported.length + 1) {
-          chapter = again;
-          model = retry.model;
-          missing = againMissing;
-        }
-      }
+      const before = chapter;
+      const replaced = await tryAgain(
+        `Your previous draft left out parts of the passage. Include all of it, edited for reading, in order — in particular:\n${missing.map((m) => `- ${m}`).join("\n")}`,
+        (again) => share(missingFrom(again)) < share(missing) && again.unsupported.length <= before.unsupported.length + 1,
+      );
+      if (replaced) missing = missingFrom(chapter);
     }
     chapter.missing = missing.slice(0, 8);
   }
@@ -504,7 +460,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
 
 // ---------- Proofreading the transcript ----------
 
-export const FIXES_SCHEMA = obj({
+const FIXES_SCHEMA = obj({
   fixes: {
     type: "array",
     items: obj({
@@ -664,13 +620,15 @@ function fillerDensity(paragraphsList) {
   return all.length ? (n * 1000) / all.length : 0;
 }
 
+const indexWithNumbers = (t) => Object.assign(indexTranscript(t), { numbers: numbersIn(t) });
+
 function numberMismatch(sentence, index) {
   if (!index?.numbers) return false;
   for (const n of numbersIn(sentence)) if (!index.numbers.has(n)) return true;
   return false;
 }
 
-const norm_ = (s) => String(s || "").replace(/[^가-힣a-zA-Z0-9]/g, "");
+const norm_ = (s) => String(s || "").toLowerCase().replace(/[^가-힣a-z0-9]/g, "");
 const text = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
 const list = (v) => (Array.isArray(v) ? v : []);
 const year = (v) => {
@@ -699,6 +657,9 @@ function paragraphs(v) {
     .map((p) => p.trim())
     .filter(Boolean);
 }
+
+/** The epigraph and 맺는 말 are shown on their own pages, so chapters must not repeat them. */
+const reservedLines = (outline) => [...list(outline.lastWords), outline.epigraph].filter(Boolean);
 
 /** Keeps only lines found in the transcript (when an index is given). */
 const verified = (items, index) => (index ? items.filter((q) => isFromTranscript(q, index)) : items);
@@ -789,13 +750,13 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
   // (weaker models loop when the material runs out).
   const kept = [];
   const seen = new Set();
-  const reserved = [...list(outline.lastWords), outline.epigraph].filter(Boolean); // shown on their own pages
+  const reserved = reservedLines(outline);
   for (const p of paragraphs(d.paragraphs)) {
     if (kept.some((k) => similarity(k, p) > 0.7)) continue;
     if (reserved.some((r) => r.length > 30 && similarity(r, p) > 0.6)) continue;
     const sentences = p.match(/[^.!?。]+[.!?。]+["”」']?\s*|[^.!?。]+$/g) || [p];
     const fresh = sentences.filter((s) => {
-      const key = s.replace(/[^가-힣a-zA-Z0-9]/g, "");
+      const key = norm_(s);
       if (key.length < 8) return true;
       // Narration about what the interview record lacks; never applied to 구술 정리, where every
       // sentence is the speaker's own words ("그 시기에는 내일 일을 알 수 없었어요").
@@ -838,7 +799,7 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
   }
 
   // In 구술 정리 the body already is the speaker's words: a pull quote would print them twice.
-  if (settings.voice === "oral" && pullQuote.text && kept.some((k) => similarity(pullQuote.text, k) > 0.5)) {
+  if (oral && pullQuote.text && kept.some((k) => similarity(pullQuote.text, k) > 0.5)) {
     pullQuote = { text: "", context: "" };
   }
 

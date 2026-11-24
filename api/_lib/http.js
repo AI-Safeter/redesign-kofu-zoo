@@ -89,7 +89,7 @@ export function ndjsonStream(work, request) {
   });
 }
 
-export function friendlyError(err) {
+function friendlyError(err) {
   const status = err?.status;
   // Our own errors carry a Korean message; anything else is unexpected and stays in the logs.
   if (/[가-힣]/.test(err?.message || "")) return err.message;

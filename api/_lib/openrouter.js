@@ -58,7 +58,7 @@ const fail = (message, status = 500) => Object.assign(new Error(message), { stat
 const isClaude = (model) => /^anthropic\//.test(model);
 
 /** Pulls the JSON object out of a reply that may be wrapped in ``` fences or extra prose. */
-export function extractJson(text) {
+function extractJson(text) {
   const cleaned = text.replace(/^﻿/, "").replace(/```(?:json)?/gi, "").trim();
   try {
     return JSON.parse(cleaned);

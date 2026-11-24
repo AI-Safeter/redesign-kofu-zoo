@@ -55,7 +55,7 @@ function clean(text) {
   return String(text || "")
     .replace(/```[a-z]*\n?|```/g, "")
     .replace(/^\s*(다음은|아래는|받아\s?쓴|Here is|Transcript)[^\n]*[:：]\s*\n/i, "")
-    .replace(/[(\[（［](음악|웃음|박수|침묵|기침|잡음|music|laughter|silence)[^)\]）］]*[)\]）］]/gi, "")
+    .replace(/[([（［](음악|웃음|박수|침묵|기침|잡음|music|laughter|silence)[^)\]）］]*[)\]）］]/gi, "")
     .replace(/[ \t]+/g, " ")
     .trim();
 }
