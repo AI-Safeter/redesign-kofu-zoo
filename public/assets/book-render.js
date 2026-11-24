@@ -32,7 +32,7 @@
       .replace(/(\S)\s+-\s+(\S)/g, "$1: $2")
       .replace(/"([^"\n]*)"/g, "“$1”")
       .replace(/[「『]([^」』\n]*)[」』]/g, "“$1”")
-      .replace(/(^|[\s(\[“])'([^'\n]*)'/g, "$1‘$2’");
+      .replace(/(^|[\s([“])'([^'\n]*)'/g, "$1‘$2’");
   }
 
   // An editable text node bound to a path inside the book object, e.g. "chapters.0.paragraphs.2".
@@ -84,9 +84,6 @@
       kind: "cover",
       label: "표지",
       node: el("div", { className: "cover" }, [
-        el("div", { className: "cover__top" }, [
-          book.sample ? el("p", { className: "cover__badge", text: book.meta && book.meta.origin ? "샘플 · 사람이 쓴 예시 · 가상의 인물" : "샘플 · 가상의 인물" }) : null,
-        ]),
         el("div", { className: "cover__main" }, [
           txt("h1", "cover__title", book.title, "title"),
           book.subtitle ? txt("p", "cover__subtitle", book.subtitle, "subtitle") : null,

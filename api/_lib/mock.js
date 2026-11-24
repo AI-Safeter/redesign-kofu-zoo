@@ -34,7 +34,6 @@ export async function mockOutline(settings, onProgress) {
   const { title, subtitle, subjectName, birthYear, birthplace, epigraph, people, prologue, timeline, lastWords, epilogue } = book;
   return {
     outline: { kind: "life", speakerRole: "", speaksAs: "나", title, subtitle, subjectName, birthYear, birthplace, epigraph, people, prologue, chapters, timeline: timeline.filter((t) => t.chapter <= chapters.length), lastWords, epilogue },
-    model: "mock",
   };
 }
 
@@ -43,7 +42,6 @@ export async function mockFixes(transcript) {
     fixes: transcript.includes("갯벌")
       ? [{ heard: "갯벌", meant: "갯벌", kind: "mishearing", checked: false, why: "(시험 모드 예시 — 실제로는 잘못 들린 말만 보여 줍니다)" }]
       : [],
-    model: "mock",
   };
 }
 
@@ -54,5 +52,5 @@ export async function mockChapter(index, onProgress) {
     onProgress({ type: "progress", chars: i * 500 });
   }
   const c = book.chapters[index % book.chapters.length];
-  return { chapter: { paragraphs: c.paragraphs, pullQuote: c.pullQuote, excerpt: c.excerpt, unverified: [] }, model: "mock" };
+  return { chapter: { paragraphs: c.paragraphs, pullQuote: c.pullQuote, excerpt: c.excerpt, unverified: [] } };
 }

@@ -141,7 +141,6 @@ body {
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; min-width: 0; }
 .field__label { font-weight: 600; font-size: 0.92rem; }
 .field__label em { font-style: normal; font-weight: 400; color: var(--ink-3); }
-.field__hint { font-size: 0.84rem; color: var(--ink-3); line-height: 1.55; }
 
 input[type="text"], input[type="password"], select, textarea {
   font: 400 1rem/1.5 var(--font);

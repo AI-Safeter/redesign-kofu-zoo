@@ -4,8 +4,8 @@
 // Engines, in order:
 //   OpenRouter audio models (Qwen 3.8 Omni Flash, then Gemini 2.5 Flash) when OPENROUTER_API_KEY
 //     is set — far more accurate on Korean interviews, about 2 cents per hour of audio;
-//   Whisper as the fallback: groq (free tier, large-v3) or openai (paid, whisper-1).
-// TRANSCRIBE_PROVIDER=groq|openai|openrouter forces one.
+//   Groq Whisper large-v3 (free tier) as the fallback.
+// TRANSCRIBE_PROVIDER=groq|openrouter forces one.
 import { checkAccess, errorResponse, json, isMock } from "./_lib/http.js";
 import { mockTranscribe } from "./_lib/mock.js";
 import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels } from "./_lib/audio-llm.js";
@@ -13,20 +13,12 @@ import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels 
 const MAX_BYTES = 4_400_000;
 const TRY_AGAIN = "음성 인식에 잠시 문제가 생겼어요. 잠시 후 다시 눌러 주세요.";
 
-const PROVIDERS = {
-  groq: {
-    name: "Groq",
-    url: "https://api.groq.com/openai/v1/audio/transcriptions",
-    keyEnv: "GROQ_API_KEY",
-    model: () => process.env.GROQ_TRANSCRIBE_MODEL || "whisper-large-v3",
-    altModel: () => "whisper-large-v3-turbo",
-  },
-  openai: {
-    name: "OpenAI",
-    url: "https://api.openai.com/v1/audio/transcriptions",
-    keyEnv: "OPENAI_API_KEY",
-    model: () => process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1",
-  },
+const GROQ = {
+  name: "Groq",
+  url: "https://api.groq.com/openai/v1/audio/transcriptions",
+  keyEnv: "GROQ_API_KEY",
+  model: () => process.env.GROQ_TRANSCRIBE_MODEL || "whisper-large-v3",
+  altModel: () => "whisper-large-v3-turbo",
 };
 
 /** Whether this deployment can transcribe at all. */
@@ -35,11 +27,7 @@ export function canTranscribe() {
 }
 
 function transcriptionProvider() {
-  const wanted = (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase();
-  if (PROVIDERS[wanted] && process.env[PROVIDERS[wanted].keyEnv]) return PROVIDERS[wanted];
-  if (process.env.GROQ_API_KEY) return PROVIDERS.groq;
-  if (process.env.OPENAI_API_KEY) return PROVIDERS.openai;
-  return null;
+  return process.env.GROQ_API_KEY && (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase() !== "openrouter" ? GROQ : null;
 }
 
 export async function POST(request) {
@@ -73,14 +61,14 @@ export async function POST(request) {
       // The second opinion only helps proofreading: wait at most 20 s more for it.
       const alt = await Promise.race([altPromise, new Promise((r) => setTimeout(() => r(null), 20_000))]);
       const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
-      return json({ text: tidy(main.text), engine: main.model, alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
+      return json({ text: tidy(main.text), alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
     } catch (err) {
       console.warn("Audio models failed, falling back to Whisper:", err.message);
       if (!provider) return errorResponse("음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.", 502);
     }
   }
   if (!provider) {
-    return errorResponse("음성 인식용 API 키가 서버에 설정되지 않았습니다. 녹취록을 직접 붙여넣어 주세요.", 500);
+    return errorResponse("음성 인식용 API 키가 서버에 설정되지 않았습니다.", 500);
   }
 
   const first = await recognize(provider, { audio, type, name, model: provider.model(), prompt: hint, signal: request.signal });
@@ -90,10 +78,10 @@ export async function POST(request) {
   // Whisper sometimes skips speech (one long segment with very little text) or loops.
   // Try again once without the hint, on the alternative model where there is one.
   if (suspicious(first.segments)) {
-    const second = await recognize(provider, { audio, type, name, model: provider.altModel?.() || provider.model(), prompt: "", signal: request.signal });
+    const second = await recognize(provider, { audio, type, name, model: provider.altModel(), prompt: "", signal: request.signal });
     if (!second.error && score(second) > score(first)) best = second;
   }
-  return json({ text: buildText(best), engine: provider.name });
+  return json({ text: buildText(best) });
 }
 
 /** Starts a new paragraph at a sentence end every ~400 characters. */
@@ -113,12 +101,11 @@ function paragraphs(text) {
 }
 
 async function recognize(provider, { audio, type, name, model, prompt, signal }) {
-  const verbose = !/gpt-4o/.test(model); // gpt-4o transcription models only return plain JSON
   const form = new FormData();
   form.append("file", new Blob([audio], { type }), name);
   form.append("model", model);
   form.append("language", "ko");
-  form.append("response_format", verbose ? "verbose_json" : "json");
+  form.append("response_format", "verbose_json");
   if (prompt) form.append("prompt", prompt);
 
   let res;

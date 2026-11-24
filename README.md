@@ -6,7 +6,7 @@ Upload a recorded interview (Korean) and get an HTML e-book that chronicles one 
 - **3–8 chapters**, each opening with its years, the person's age and the place (e.g. "1955–1972 · 출생–17세 · 경북 안동"), a pull quote, and an **인터뷰에서** box with a real question and answer from the recording
 - **남기고 싶은 말** (their message to the family, verbatim), **연보** (timeline grouped by chapter, with ages) and **에필로그**
 
-- **Sample book:** `/book?sample` (a fictional person, written by hand to show the format)
+- **Published books:** `/read?id=…` (read-only pages made with 발행하기)
 - **Builder:** `/` (upload audio and press 전자책 만들기 → read, correct in 글 고치기, save as a file or PDF)
 
 ### Faithfulness
@@ -27,7 +27,7 @@ audio file ─▶ decode at 16 kHz mono,
               cut into ~100 s WAV chunks ─▶ /api/transcribe (per chunk) ─▶ Qwen 3.8 Omni Flash / Gemini 2.5 Flash (OpenRouter),
                                                                falling back to Groq Whisper large-v3 (free)
 transcript ─▶ /api/fixes: confident sound-alike corrections applied automatically
-            ─▶ /api/outline ─────────────▶ Claude or a free OpenRouter model: title, chapter plan, prologue, timeline, epilogue
+            ─▶ /api/outline ─────────────▶ Claude Sonnet 5.5 via Nous (free OpenRouter models as fallback): title, chapter plan, prologue, timeline, epilogue
             ─▶ /api/chapter × N (3 at once) ▶ same model: each chapter's text + pull quote
 book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit mode, font size,
                                    dark mode, print/PDF, download as one standalone .html file)
@@ -53,21 +53,15 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
    |---|---|---|
    | `NOUS_API_KEY` | recommended | Writing the book with Claude Sonnet 5.5 through Nous Portal (best Korean in our tests, ≈$0.25 per 1-hour interview with prompt caching). <https://portal.nousresearch.com> |
    | `OPENROUTER_API_KEY` | recommended | Speech recognition (Qwen audio model), and free writing models used when there is no Nous key or Nous fails. <https://openrouter.ai/keys> |
-   | `ANTHROPIC_API_KEY` | no | Writing with Claude through Anthropic's own API instead; takes priority over the gateways when set. <https://platform.claude.com> |
    | `GROQ_API_KEY` | recommended | Free Whisper fallback for transcription (used when the OpenRouter audio models fail or there's no OpenRouter key). Create a key at <https://console.groq.com/keys>. Without it, recordings can only be transcribed through OpenRouter |
    | `BLOB_READ_WRITE_TOKEN` | for 발행하기 | Publishing books as read-only pages (`/read?id=…`). Set automatically when you create a Blob store in Vercel (Storage → Create → Blob) and connect it to this project. Without it the 발행하기 button is hidden |
    | `ACCESS_CODE` | recommended | If set, visitors must enter this code before the app calls the paid APIs |
-   | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5` |
-   | `CLAUDE_EFFORT` | no | `low` / `medium` / `high` (default) / `xhigh` / `max` |
    | `OPENROUTER_MODELS` | no | Comma-separated models, tried in order. Default: `nvidia/nemotron-3-ultra-550b-a55b:free`, `baidu/ernie-5.5-flash-preview:free`, `google/gemma-4-31b-it:free` |
    | `NOUS_MODELS` | no | Comma-separated Nous Portal models, tried in order. Default: `anthropic/claude-sonnet-5.5` |
    | `WRITER_EFFORT` | no | Reasoning effort for the gateway models: `low` (default) / `medium` / `high` |
-   | `WRITER_PROVIDER` | no | `anthropic` or `gateway` (Nous, then OpenRouter), to choose when both kinds of key are set |
    | `OPENROUTER_AUDIO_MODELS` | no | Audio models for transcription, tried in order. Default: `qwen/qwen3.8-omni-flash`, `google/gemini-2.5-flash`. These are paid (≈$0.02 and ≈$0.15 per hour of audio), so the OpenRouter account needs some credit |
-   | `TRANSCRIBE_PROVIDER` | no | `openrouter`, `groq` or `openai` to force one transcription engine |
+   | `TRANSCRIBE_PROVIDER` | no | `openrouter` or `groq` to force one transcription engine |
    | `GROQ_TRANSCRIBE_MODEL` | no | Defaults to `whisper-large-v3` (`whisper-large-v3-turbo` is faster, slightly less accurate) |
-   | `OPENAI_API_KEY` | no | Paid alternative to Groq for transcription; used only when `GROQ_API_KEY` is not set or `TRANSCRIBE_PROVIDER=openai` |
-   | `OPENAI_TRANSCRIBE_MODEL` | no | Defaults to `whisper-1` |
 
 4. Redeploy so the variables take effect.
 
@@ -75,7 +69,7 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 
 ## Rough cost per book
 
-For a 1-hour interview: transcription costs about $0.02 with Qwen 3.8 Omni Flash (or nothing on Groq's free Whisper fallback, which allows about 2 hours of audio per hour: 7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. With OpenRouter's free models, writing is free too (free models allow about 20 requests a minute; one book uses 3–13). Free models are good but noticeably weaker writers than Claude, and they are sometimes busy, in which case the next model in the list is used. With Claude, writing is 1 outline call plus one call per chapter (up to 12; the interview length decides) on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
+For a 1-hour interview: transcription costs about $0.02 with Qwen 3.8 Omni Flash (or nothing on Groq's free Whisper fallback, which allows about 2 hours of audio per hour: 7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. With OpenRouter's free models, writing is free too (free models allow about 20 requests a minute; one book uses 3–13). Free models are good but noticeably weaker writers than Claude, and they are sometimes busy, in which case the next model in the list is used. Through Nous, writing is 1 outline call plus one call per chapter (up to 12; the interview length decides) on Claude Sonnet 5.5, with the transcript cached after the first call: about $0.07 for a 9-minute interview and roughly $0.20 for an hour.
 
 ## Run locally
 
@@ -92,7 +86,7 @@ npm run dev:mock              # no keys needed: fake transcription and writing, 
 public/
   index.html            builder page
   book.html             reader
-  books/sample.json     sample book (fictional)
+  books/sample.json     sample book (fictional), used as fake output with MOCK_AI=1
   assets/
     builder.js          upload → transcribe → outline → chapters → save
     audio.js            in-browser decoding and chunking of the recording
@@ -110,7 +104,7 @@ api/
   publish.js            book → read-only page in Vercel Blob (same link when published again); DELETE removes it
   read.js               published book for /read?id=…
   _lib/books.js         Vercel Blob storage (in memory with MOCK_AI=1)
-  _lib/writer.js        prompts, JSON schemas, Claude calls, output clean-up and checks
+  _lib/writer.js        prompts, JSON schemas, output clean-up and checks
   _lib/verify.js        checks that quotations appear in the transcript
   _lib/openrouter.js    OpenRouter (free models) calls
   _lib/http.js          access code, streaming responses, error messages

@@ -234,7 +234,6 @@
       var data = {};
       try { data = await res.json(); } catch (e) {}
       if (res.ok) {
-        if (data.engine && tx) (tx.engines = tx.engines || {})[data.engine] = true;
         if (tx) tx.alts[i] = data.alt || "";
         return data.text || "";
       }
@@ -403,7 +402,6 @@
       settings: settingsFromForm(),
       outline: null,
       chapters: [],
-      models: [],
       startedAt: Date.now(),
     };
     saveJob();
@@ -513,8 +511,6 @@
         });
         updateOverall("잘못 들린 말을 고치는 중");
         job.transcript = await autoFix(heard, job.settings);
-        job.audioSeconds = tx.prepared.duration ? Math.round(tx.prepared.duration) : null;
-        job.transcribers = tx.engines ? Object.keys(tx.engines) : [];
         job.steps.transcribe.set("done", "");
         saveJob();
       }
@@ -531,7 +527,6 @@
           });
         }, 2);
         job.outline = res.outline;
-        if (res.model) job.models.push(res.model);
         job.chapters = new Array(job.outline.chapters.length);
         saveJob();
         renderSteps();
@@ -556,7 +551,6 @@
               return streamCall("/api/chapter", Object.assign({ outline: job.outline, index: i }, payload));
             }, 3);
             job.chapters[i] = r.chapter;
-            if (r.model) job.models.push(r.model);
             saveJob();
             step.set("done", "");
             updateOverall("제" + (i + 1) + "장을 마쳤어요");
@@ -615,11 +609,6 @@
       id: job.id,
       createdAt: new Date().toISOString(),
       settings: job.settings,
-      meta: {
-        audioSeconds: job.audioSeconds,
-        models: job.models.filter(function (m, i, a) { return m && a.indexOf(m) === i; }),
-        transcribers: job.transcribers || [],
-      },
       kind: o.kind,
       speakerRole: o.speakerRole,
       speaksAs: o.speaksAs,
@@ -686,7 +675,6 @@
         $("resume").hidden = true;
         job = saved;
         job.chapters = job.chapters || [];
-        job.models = job.models || [];
         runJob();
       };
       $("resume-drop").onclick = function () {
@@ -739,11 +727,11 @@
     var problems = [];
     if (!config.transcription) {
       problems.push("지금은 녹음 받아쓰기를 쓸 수 없어요.");
-      console.warn("Transcription disabled: set GROQ_API_KEY (or OPENAI_API_KEY).");
+      console.warn("Transcription disabled: set OPENROUTER_API_KEY or GROQ_API_KEY.");
     }
     if (!config.writing) {
       problems.push("지금은 책 쓰기 기능을 쓸 수 없어요.");
-      console.warn("Writing disabled: set NOUS_API_KEY, OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
+      console.warn("Writing disabled: set NOUS_API_KEY or OPENROUTER_API_KEY.");
     }
     if (config.mock) console.warn("MOCK_AI is on: transcripts and books are samples, not real AI output.");
     if (problems.length && $("notice").hidden) showNotice(problems);

@@ -1,6 +1,5 @@
 // Turns an interview transcript into a life-chronicle e-book, with Claude Sonnet 5.5 through
-// Nous Portal (NOUS_API_KEY), free OpenRouter models as the fallback, or Claude through
-// Anthropic's own API (ANTHROPIC_API_KEY).
+// Nous Portal (NOUS_API_KEY) and free OpenRouter models as the fallback.
 // Two steps: plan the book (outline), then write each chapter in its own request.
 // Every request for one book shares the same system prompt + transcript, which is
 // marked for prompt caching so the transcript is billed in full only once or twice.
@@ -9,35 +8,15 @@
 // found in the transcript, ages are computed from years here (not by the model), and
 // near-duplicate paragraphs are dropped.
 
-import Anthropic from "@anthropic-ai/sdk";
 import { callGateways, gateways } from "./openrouter.js";
 import { indexTranscript, isFromTranscript, quotedSpans, similarity, support } from "./verify.js";
 
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
-const EFFORT = process.env.CLAUDE_EFFORT || "high";
 const MAX_TRANSCRIPT_CHARS = 400_000;
 // The most chapters a book can have; the interview's length usually sets fewer (chapterLimit).
 const MAX_CHAPTERS = 12;
 
-/**
- * "anthropic" (Claude through Anthropic's own API), "gateway" (Nous Portal and/or OpenRouter),
- * or null when no writing key is configured.
- */
-export function writingProvider() {
-  const wanted = (process.env.WRITER_PROVIDER || "").toLowerCase();
-  const hasGateway = gateways().length > 0;
-  if (wanted === "gateway" && hasGateway) return "gateway";
-  if (wanted === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (hasGateway) return "gateway";
-  return null;
-}
-
-let client;
-function getClient() {
-  client ??= new Anthropic();
-  return client;
-}
+/** Whether a writing key is configured. */
+export const canWrite = () => gateways().length > 0;
 
 const fail = (message, status = 500) => Object.assign(new Error(message), { status });
 
@@ -262,69 +241,17 @@ async function callModel({ settings, transcript, userText, schema, schemaName, o
     if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
     signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(left)]) : AbortSignal.timeout(left);
   }
-  const provider = writingProvider();
-  if (!provider) throw fail("글쓰기용 API 키(NOUS_API_KEY, OPENROUTER_API_KEY 또는 ANTHROPIC_API_KEY)가 서버에 설정되지 않았습니다.");
-  if (provider === "gateway") {
-    return callGateways({
-      deadline,
-      system: systemPrompt(settings),
-      cached: transcriptBlock(transcript),
-      userText,
-      schema,
-      schemaName,
-      onProgress,
-      signal,
-    });
-  }
-  return callClaude({ settings, transcript, userText, schema, onProgress, signal });
-}
-
-async function callClaude({ settings, transcript, userText, schema, onProgress, signal }) {
-  const stream = getClient().beta.messages.stream(
-    {
-    model: MODEL,
-    max_tokens: 32000,
-    // If a safety classifier declines, retry on Anthropic's recommended fallback model.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    thinking: { type: "adaptive" },
-    output_config: { effort: EFFORT, format: { type: "json_schema", schema } },
-    system: [
-      { type: "text", text: systemPrompt(settings) },
-      { type: "text", text: transcriptBlock(transcript), cache_control: { type: "ephemeral" } },
-    ],
-    messages: [{ role: "user", content: userText }],
-    },
-    { signal },
-  );
-
-  let chars = 0;
-  let lastSent = 0;
-  stream.on("text", (delta) => {
-    chars += delta.length;
-    if (chars - lastSent > 200) {
-      lastSent = chars;
-      onProgress?.({ type: "progress", chars });
-    }
+  if (!canWrite()) throw fail("글쓰기용 API 키(NOUS_API_KEY 또는 OPENROUTER_API_KEY)가 서버에 설정되지 않았습니다.");
+  return callGateways({
+    deadline,
+    system: systemPrompt(settings),
+    cached: transcriptBlock(transcript),
+    userText,
+    schema,
+    schemaName,
+    onProgress,
+    signal,
   });
-
-  const message = await stream.finalMessage();
-  if (message.stop_reason === "refusal") throw fail("AI가 이 내용의 처리를 거절했습니다.", 422);
-  if (message.stop_reason === "max_tokens") throw fail("결과가 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요.");
-
-  // After a server-side fallback, content holds the declined model's partial output, then a
-  // "fallback" block, then the fallback model's full answer: keep only what follows the last one.
-  const lastFallback = message.content.map((b) => b.type).lastIndexOf("fallback");
-  const text = message.content
-    .slice(lastFallback + 1)
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-  try {
-    return { data: JSON.parse(text), model: message.model };
-  } catch {
-    throw fail("AI 응답을 해석하지 못했습니다. 다시 시도해 주세요.");
-  }
 }
 
 /**
@@ -372,7 +299,7 @@ function assignSpans(outline, transcript) {
 }
 
 export async function writeOutline({ settings, transcript, onProgress, signal }) {
-  const { data, model } = await callModel({
+  const { data } = await callModel({
     settings,
     transcript,
     userText: outlineRequest(settings, transcript),
@@ -391,7 +318,7 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
     .filter((s) => norm_(s).length >= 8 && ((RISKY.test(s) && support(s, index) < 0.35) || numberMismatch(s, index)))
     .map((s) => s.trim());
   if (outline.chapters.length === 0) throw fail("목차를 만들지 못했습니다. 다시 시도해 주세요.");
-  return { outline, model };
+  return { outline };
 }
 
 export async function writeChapter({ settings, transcript, outline, index: chapterIndex, onProgress, signal }) {
@@ -405,7 +332,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
   const request = chapterRequest(outline, chapterIndex, transcript, settings);
   const ask = (feedback) =>
     callModel({ settings, transcript, userText: request + feedback, schema: CHAPTER_SCHEMA, schemaName: "book_chapter", onProgress, signal, deadline });
-  let { data, model } = await ask("");
+  const { data } = await ask("");
   let chapter = normalizeChapter(data, transcriptIndex, plan, outline, settings);
   // Asks once more with feedback; keeps the new draft only when it has text and `better` holds.
   const tryAgain = async (feedback, better) => {
@@ -414,7 +341,6 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     const again = normalizeChapter(retry.data, transcriptIndex, plan, outline, settings);
     if (!again.paragraphs.length || !better(again)) return false;
     chapter = again;
-    model = retry.model;
     return true;
   };
 
@@ -457,7 +383,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
   }
   delete chapter.quotedShare;
   if (chapter.paragraphs.length === 0) throw fail("이 장의 본문을 받지 못했습니다. 다시 시도해 주세요.");
-  return { chapter, model };
+  return { chapter };
 }
 
 // ---------- Proofreading the transcript ----------
@@ -482,7 +408,7 @@ const FIXES_SCHEMA = obj({
  * whether it should be ticked by default.
  */
 export async function findFixes({ settings, transcript, alt, onProgress, signal }) {
-  const { data, model } = await callModel({
+  const { data } = await callModel({
     settings,
     transcript,
     userText: `Proofread the transcript above for speech-recognition errors only.
@@ -551,7 +477,7 @@ At most 30 items; [] if there are none.`,
     });
     if (fixes.length >= 30) break;
   }
-  return { fixes, model };
+  return { fixes };
 }
 
 /** 0–1: how alike two Korean strings sound, comparing their jamo (자모). */
