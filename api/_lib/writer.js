@@ -128,7 +128,7 @@ function outlineRequest(settings, transcript) {
 - subjectName: the main character's name ("" if never mentioned and not given).
 - birthYear: four-digit birth year if the interview gives it or it follows directly from what is said, else "".
 - birthplace: e.g. "경상북도 안동" ("" if unknown).
-- epigraph: one memorable sentence the interviewee actually said (verbatim).
+- epigraph: one memorable sentence the interviewee actually said (verbatim). Never pick a sentence that looks garbled or misheard.
 - people: the individual people the interview mentions who matter in the story — family, friends, mentors. Not the main character, not the interviewer, and not groups (직원들, 거래처, 동무들). name ("" if unnamed), relation to the main character (e.g. "아내", "삼촌", "군대 동기"), note: one short phrase from the interview. Do not add people who are not mentioned.
 - chapters: AT MOST ${chapterLimit(settings, transcript)}, together covering everything substantial in the interview. Use fewer chapters when the material is thin: each chapter needs at least two distinct episodes or points. For kind "life" (and the life parts of "mixed"): chronological, periods must not overlap. For kind "work": themes in the order the speaker raised them, with no invented chronology (yearFrom/yearTo/place stay "" unless the speaker gave them). For each:
   - title: a chapter title (no "제1장" prefix).
@@ -140,7 +140,7 @@ function outlineRequest(settings, transcript) {
   - notes: a brief for the chapter writer — details, people, places and dates from the transcript that belong here.
 - timeline: key events with a year or age the speaker actually stated, in order (at most 16). Use [] if there are none, which is normal for kind "work". year: the four-digit year (or "" if unknown); approx: true when the year is estimated (e.g. computed from an age) rather than stated; chapter: the number of the chapter it belongs to (1-based); event: a short phrase.
 - keyTerms: for kind "work" or "mixed", 3–8 key ideas, methods, names or numbers the speaker explained (term: as they named it, correctly spelled; note: one short line from the interview). [] for kind "life".
-- lastWords: the interviewee's message to family, to future generations, or to people who will do the same work, verbatim from the transcript, split into short paragraphs. Empty list if there is none. These words will appear on their own page, so do not plan to use them elsewhere.
+- lastWords: the interviewee's message to family, to future generations, or to people who will do the same work, verbatim from the transcript, split into short paragraphs; skip sentences that look garbled or misheard. Empty list if there is none. These words will appear on their own page, so do not plan to use them elsewhere.
 - prologue ("책을 펴내며"): 1–2 short paragraphs, in the third person, about the occasion: who this person is in one line, who sat down with them and when, why this book exists. Do not list years or events; the chapters do that.
 - epilogue: one paragraph of reflection on what this life or work shows. No new events and no repeating the lastWords.
 
@@ -352,13 +352,23 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
 // ---------- Proofreading the transcript ----------
 
 export const FIXES_SCHEMA = obj({
-  fixes: { type: "array", items: obj({ heard: str, meant: str, why: str }) },
+  fixes: {
+    type: "array",
+    items: obj({
+      heard: str,
+      meant: str,
+      kind: { type: "string", enum: ["mishearing", "term", "number"] },
+      confidence: { type: "string", enum: ["high", "low"] },
+      why: str,
+    }),
+  },
 });
 
 /**
  * Asks the model for likely speech-recognition errors in the transcript, for the user to
  * accept or reject before the book is written. Only suggestions whose "heard" text really
- * occurs in the transcript are returned.
+ * occurs in the transcript are returned, widened to whole words, and each comes with
+ * whether it should be ticked by default.
  */
 export async function findFixes({ settings, transcript, onProgress, signal }) {
   const { data, model } = await callModel({
@@ -366,23 +376,84 @@ export async function findFixes({ settings, transcript, onProgress, signal }) {
     transcript,
     userText: `Proofread the transcript above for speech-recognition errors only.
 
-List words or short phrases that were almost certainly misheard, where the context makes the intended words clear: nonsense words, wrong homophones, wrong numbers that contradict the rest of the interview, misspelled names and terms${settings.terms ? ` (the correct spellings include: ${settings.terms})` : ""}.
-- heard: the exact text as it appears in the transcript (copy it character for character, 2–20 characters, enough to be unambiguous).
-- meant: the corrected text.
-- why: a few words of evidence (e.g. "뒤에서 '10회기'라고 함", "플레이백 시어터는 연극 형식 이름").
-Do not change dialect, grammar, style or fillers, and do not guess where the context is not clear. At most 30 items; [] if there are none.`,
+List words that were almost certainly misheard: nonsense words, a word that sounds like the right one but makes no sense here, and misspelled names or terms${settings.terms ? ` (correct spellings given by the user: ${settings.terms})` : ""}.
+Rules:
+- heard: whole words exactly as they appear in the transcript (copy them character for character, including particles attached to the word).
+- meant: the same words corrected, still whole words that read naturally in the sentence.
+- meant must SOUND like heard. Never replace a word just because another word would fit the meaning better.
+- Numbers: change a number only to a value the transcript itself states elsewhere for the same thing; if you think a number is wrong but the transcript does not state the right value, use meant "?" and kind "number".
+- Leave colloquial, dialect or nonstandard but real words alone (e.g. 키고 for 켜고). Do not change style, grammar, word choice or fillers.
+- kind: "term" for names and technical terms, "number" for numbers, otherwise "mishearing".
+- confidence: "high" only when the context leaves no doubt.
+- why: a few words of evidence from the transcript.
+At most 30 items; [] if there are none.`,
     schema: FIXES_SCHEMA,
     schemaName: "transcript_fixes",
     onProgress,
     signal,
   });
   const seen = new Set();
-  const fixes = list(data?.fixes)
-    .map((f) => ({ heard: text(f?.heard), meant: text(f?.meant), why: text(f?.why) }))
-    .filter((f) => f.heard && f.meant && f.heard !== f.meant && f.heard.length <= 40 && transcript.includes(f.heard))
-    .filter((f) => !seen.has(f.heard) && seen.add(f.heard))
-    .slice(0, 30);
+  const fixes = [];
+  for (const f of list(data?.fixes)) {
+    let heard = text(f?.heard);
+    let meant = text(f?.meant);
+    if (!heard || !meant || heard === meant || heard.length > 40) continue;
+    const at = transcript.indexOf(heard);
+    if (at < 0) continue;
+    // Widen to whole words, so a fix can't leave half a word behind ("플레이백였던").
+    let start = at;
+    let end = at + heard.length;
+    while (start > 0 && !/\s/.test(transcript[start - 1])) start--;
+    while (end < transcript.length && !/\s|[.,?!]/.test(transcript[end])) end++;
+    const before = transcript.slice(start, at);
+    const after = transcript.slice(at + heard.length, end);
+    if (meant !== "?") meant = before + meant + after;
+    heard = transcript.slice(start, end);
+    if (seen.has(heard)) continue;
+    seen.add(heard);
+    const kind = ["mishearing", "term", "number"].includes(f.kind) ? f.kind : "mishearing";
+    const confident = f.confidence === "high";
+    const sounds = meant === "?" ? 0 : soundSimilarity(heard, meant);
+    fixes.push({
+      heard,
+      meant,
+      kind,
+      why: text(f?.why),
+      // Ticked by default only when it is a confident, sound-alike, non-number fix.
+      checked: confident && kind !== "number" && meant !== "?" && sounds >= (kind === "term" ? 0.4 : 0.5),
+    });
+    if (fixes.length >= 30) break;
+  }
   return { fixes, model };
+}
+
+/** 0–1: how alike two Korean strings sound, comparing their jamo (자모). */
+function soundSimilarity(a, b) {
+  const jamo = (s) => {
+    let out = "";
+    for (const ch of s.replace(/\s/g, "")) {
+      const c = ch.charCodeAt(0) - 0xac00;
+      if (c < 0 || c > 11171) {
+        out += ch;
+        continue;
+      }
+      out += String.fromCharCode(0x1100 + Math.floor(c / 588), 0x1161 + Math.floor((c % 588) / 28)) + (c % 28 ? String.fromCharCode(0x11a7 + (c % 28)) : "");
+    }
+    return out;
+  };
+  const x = jamo(a);
+  const y = jamo(b);
+  const d = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) {
+    let prev = d[0];
+    d[0] = i;
+    for (let j = 1; j <= y.length; j++) {
+      const tmp = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (x[i - 1] === y[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return 1 - d[y.length] / Math.max(x.length, y.length, 1);
 }
 
 // ---------- Output clean-up and checks ----------

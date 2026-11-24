@@ -74,7 +74,6 @@ async function recognize(provider, { audio, type, name, model, prompt }) {
   form.append("file", new Blob([audio], { type }), name);
   form.append("model", model);
   form.append("language", "ko");
-  form.append("temperature", "0");
   form.append("response_format", verbose ? "verbose_json" : "json");
   if (prompt) form.append("prompt", prompt);
 
@@ -135,7 +134,7 @@ const OUTRO = /^(감사합니다|시청해 ?주셔서 감사합니다|구독과 
  */
 function buildText(result) {
   const segs = result.segments;
-  if (!segs || !segs.length) return result.text;
+  if (!segs || !segs.length) return collapseRepeats(result.text);
   const kept = segs.filter((seg, i) => {
     const t = String(seg.text || "").trim();
     if (!t) return false;
@@ -143,14 +142,27 @@ function buildText(result) {
     return !(last && OUTRO.test(t) && (seg.no_speech_prob > 0.3 || seg.avg_logprob < -0.6));
   });
   let out = "";
+  let paragraph = 0;
+  let last = "";
   kept.forEach((seg, i) => {
-    const t = String(seg.text).trim();
-    if (i > 0) {
+    const t = collapseRepeats(String(seg.text).trim());
+    if (!t || t === last) return; // a segment repeated word for word is a loop
+    last = t;
+    if (out) {
       const prev = kept[i - 1];
-      const ended = /[.?!。요다죠까]$/.test(String(prev.text).trim());
-      out += ended && seg.start - prev.end > 1 ? "\n" : " ";
+      const ended = /[.?!。요다죠까]$/.test(out.trim());
+      // New paragraph at a pause after a sentence, or after ~400 characters at a sentence end.
+      const brk = ended && (seg.start - prev.end > 0.6 || paragraph > 400);
+      out += brk ? "\n" : " ";
+      if (brk) paragraph = 0;
     }
     out += t;
+    paragraph += t.length;
   });
   return out.trim();
+}
+
+/** "연극공간의 연극공간 연극공간의 연극공간" → "연극공간의 연극공간": a phrase of 1–4 words said 3+ times in a row is a loop. */
+function collapseRepeats(text) {
+  return text.replace(/(\S+(?:\s+\S+){0,3}?)(?:\s+\1){2,}/g, "$1").replace(/((\S+\s+\S+))\s+\2(?=\s|$)/g, "$1");
 }

@@ -369,13 +369,15 @@
       $("fixes-status").textContent = "AI가 확실히 잘못 들린 말을 찾지 못했어요. 그래도 이름과 숫자는 한 번 훑어봐 주세요.";
       return;
     }
-    $("fixes-status").textContent = fixes.length + "곳을 찾았어요. 맞는 것만 체크해 두고 ‘체크한 것 고치기’를 누르세요.";
+    $("fixes-status").textContent = fixes.length + "곳을 찾았어요. AI가 확실하다고 본 것만 미리 체크해 두었어요. 녹음을 떠올리며 맞는 것만 체크하고 ‘체크한 것 고치기’를 누르세요.";
     fixes.forEach(function (f, i) {
       var li = document.createElement("li");
       var label = document.createElement("label");
       var box = document.createElement("input");
       box.type = "checkbox";
-      box.checked = true;
+      var unknown = f.meant === "?";
+      box.checked = f.checked !== false && !unknown;
+      box.disabled = unknown;
       box.dataset.heard = f.heard;
       box.dataset.meant = f.meant;
       var change = document.createElement("span");
@@ -383,11 +385,11 @@
       var del = document.createElement("del");
       del.textContent = f.heard;
       var ins = document.createElement("ins");
-      ins.textContent = f.meant;
+      ins.textContent = unknown ? "? (녹음을 듣고 직접 고쳐 주세요)" : f.meant;
       change.append(del, " → ", ins);
       var why = document.createElement("span");
       why.className = "fixes__why";
-      why.textContent = f.why;
+      why.textContent = (f.kind === "number" ? "숫자 · 꼭 확인 — " : f.kind === "term" ? "이름·용어 — " : "") + f.why;
       label.append(box, change, why);
       li.appendChild(label);
       list.appendChild(li);
