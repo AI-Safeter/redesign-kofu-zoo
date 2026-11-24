@@ -290,7 +290,11 @@
         progress();
       });
 
-      var text = tx.texts.filter(Boolean).join("\n\n");
+      // Pieces were cut mid-speech: join with a space unless the piece ended a sentence.
+      var text = tx.texts.filter(Boolean).reduce(function (acc, t) {
+        if (!acc) return t;
+        return acc + (/[.?!。요다죠까]$/.test(acc.trim()) ? "\n" : " ") + t;
+      }, "");
       setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자. 아래 2단계에서 확인해 주세요.");
       deliverTranscript(text);
       tx.done = true;
@@ -325,7 +329,106 @@
     onTranscriptInput();
     $("merge-choice").hidden = true;
     $("step2-title").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (config.writing) findFixes();
   }
+
+  // ----- AI proofreading: suggestions the user accepts one by one -----
+
+  var fixesBusy = false;
+  async function findFixes() {
+    var transcript = $("transcript").value.trim();
+    if (fixesBusy) return;
+    if (transcript.length < 200) {
+      $("fixes-status").textContent = "녹취록이 200자 이상이어야 찾을 수 있어요.";
+      return;
+    }
+    fixesBusy = true;
+    $("fixes-find").disabled = true;
+    $("fixes-list").textContent = "";
+    $("fixes-apply").hidden = true;
+    $("fixes-status").textContent = "AI가 녹취록을 읽으며 잘못 들린 말을 찾는 중… (1분 안팎)";
+    try {
+      var res = await withRetry(function () {
+        return streamCall("/api/fixes", { transcript: transcript, settings: settingsFromForm() });
+      }, 2);
+      renderFixes(res.fixes || []);
+    } catch (e) {
+      $("fixes-status").textContent = "찾지 못했어요: " + e.message + " 직접 훑어보고 고쳐도 됩니다.";
+    } finally {
+      fixesBusy = false;
+      $("fixes-find").disabled = false;
+    }
+  }
+
+  function renderFixes(fixes) {
+    var list = $("fixes-list");
+    list.textContent = "";
+    var current = $("transcript").value;
+    fixes = fixes.filter(function (f) { return current.indexOf(f.heard) >= 0; });
+    if (!fixes.length) {
+      $("fixes-status").textContent = "AI가 확실히 잘못 들린 말을 찾지 못했어요. 그래도 이름과 숫자는 한 번 훑어봐 주세요.";
+      return;
+    }
+    $("fixes-status").textContent = fixes.length + "곳을 찾았어요. AI가 확실하다고 본 것만 미리 체크해 두었어요. 녹음을 떠올리며 맞는 것만 체크하고 ‘체크한 것 고치기’를 누르세요.";
+    fixes.forEach(function (f, i) {
+      var li = document.createElement("li");
+      var label = document.createElement("label");
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      var unknown = f.meant === "?";
+      box.checked = f.checked !== false && !unknown;
+      box.disabled = unknown;
+      box.dataset.heard = f.heard;
+      box.dataset.meant = f.meant;
+      var change = document.createElement("span");
+      change.className = "fixes__change";
+      var del = document.createElement("del");
+      del.textContent = f.heard;
+      var ins = document.createElement("ins");
+      ins.textContent = unknown ? "? (녹음을 듣고 직접 고쳐 주세요)" : f.meant;
+      change.append(del, " → ", ins);
+      var count = current.split(f.heard).length - 1;
+      var at = current.indexOf(f.heard);
+      var ctx = document.createElement("span");
+      ctx.className = "fixes__why";
+      ctx.textContent = "…" + current.slice(Math.max(0, at - 18), at).replace(/\s+/g, " ") + "［" + f.heard + "］" + current.slice(at + f.heard.length, at + f.heard.length + 18).replace(/\s+/g, " ") + "…" + (count > 1 ? " (" + count + "곳)" : "");
+      var why = document.createElement("span");
+      why.className = "fixes__why";
+      why.textContent = (f.kind === "number" ? "숫자 · 꼭 확인 — " : f.kind === "term" ? "이름·용어 — " : "") + f.why;
+      label.append(box, change, ctx, why);
+      li.appendChild(label);
+      list.appendChild(li);
+    });
+    $("fixes-apply").hidden = false;
+  }
+
+  $("fixes-find").addEventListener("click", findFixes);
+  var beforeFixes = null;
+  $("fixes-apply").addEventListener("click", function () {
+    var box = $("transcript");
+    beforeFixes = box.value;
+    var applied = 0;
+    $("fixes-list").querySelectorAll("input:checked").forEach(function (c) {
+      var n = box.value.split(c.dataset.heard).length - 1;
+      if (n) {
+        box.value = box.value.split(c.dataset.heard).join(c.dataset.meant);
+        applied += n;
+      }
+    });
+    onTranscriptInput();
+    $("fixes-list").textContent = "";
+    $("fixes-apply").hidden = true;
+    $("fixes-status").textContent = applied + "곳을 고쳤어요. 나머지도 한 번 훑어봐 주세요.";
+    $("fixes-undo").hidden = false;
+  });
+  $("fixes-undo").addEventListener("click", function () {
+    if (beforeFixes == null) return;
+    $("transcript").value = beforeFixes;
+    beforeFixes = null;
+    onTranscriptInput();
+    $("fixes-undo").hidden = true;
+    $("fixes-status").textContent = "고치기 전으로 되돌렸어요.";
+  });
   $("merge-replace").addEventListener("click", function () {
     $("transcript").value = pendingText || "";
     pendingText = null;
@@ -375,6 +478,7 @@
       interviewDate: $("date").value.trim(),
       interviewPlace: $("place").value.trim(),
       voice: document.querySelector('input[name="voice"]:checked').value,
+      terms: $("hint").value.trim(),
       chapters: parseInt($("chapters").value, 10),
       notes: $("notes").value.trim(),
     };
@@ -452,7 +556,10 @@
     job.steps = { outline: stepItem("이야기의 흐름을 읽고 목차를 짜는 중"), chapters: [] };
     if (job.outline) {
       job.steps.outline.set("done", "");
-      job.steps.outline.label("목차 완성: 《" + job.outline.title + "》");
+      job.steps.outline.label(
+        "목차 완성: 《" + job.outline.title + "》" +
+        (job.outline.chapters.length < job.settings.chapters ? " · 녹음 분량에 맞춰 " + job.outline.chapters.length + "장으로 지었어요" : "")
+      );
       job.steps.chapters = job.outline.chapters.map(function (c, i) {
         var s = stepItem("제" + (i + 1) + "장 " + c.title);
         if (job.chapters[i]) s.set("done", "");
@@ -462,19 +569,39 @@
   }
 
   function updateOverall(status) {
-    var total = 1 + (job.outline ? job.outline.chapters.length : 6);
+    // The outline is a fixed 20% of the bar and the chapters share the rest, so the bar never
+    // goes backwards when the outline turns out to have more chapters than guessed.
+    var total = 1 + (job.outline ? job.outline.chapters.length : 3);
     var done = (job.outline ? 1 : 0) + job.chapters.filter(Boolean).length;
-    var pct = Math.round((done / total) * 100);
+    var pct;
+    if (!job.outline) {
+      pct = Math.round(20 * Math.min(0.9, job.runStarted ? (Date.now() - job.runStarted) / 120000 : 0));
+    } else {
+      var n = job.outline.chapters.length;
+      pct = Math.round(20 + (80 * job.chapters.filter(Boolean).length) / Math.max(1, n));
+    }
     $("overall-bar").style.width = pct + "%";
     $("overall-bar").parentNode.setAttribute("aria-valuenow", String(pct));
     if (status) $("overall-status").textContent = status;
     var eta = "";
-    if (done > 0 && done < total && job.runStarted) {
-      var per = (Date.now() - job.runStarted) / Math.max(1, done - job.doneAtStart);
-      var left = Math.ceil(((total - done) * per) / CHAPTER_CONCURRENCY / 60000);
-      if (isFinite(left) && left > 0) eta = " · 약 " + left + "분 남음";
+    if (job.outline && done < total) {
+      var left = job.chapters.filter(Boolean).length < job.outline.chapters.length ? estimateLeft() : 0;
+      if (left > 0) {
+        // Never let the estimate go up: a growing countdown worries people more than a vague one.
+        job.lastEta = job.lastEta ? Math.min(job.lastEta, left) : left;
+        eta = job.lastEta <= 1 ? " · 거의 다 됐어요" : " · 약 " + job.lastEta + "분 남음";
+      }
     }
     $("overall-eta").textContent = eta;
+  }
+
+  // Minutes left for the chapters: measured speed once a chapter is done, else ~2 minutes per round.
+  function estimateLeft() {
+    var remaining = job.outline.chapters.length - job.chapters.filter(Boolean).length;
+    var rounds = Math.ceil(remaining / CHAPTER_CONCURRENCY);
+    var written = job.chapters.filter(Boolean).length - (job.chaptersAtStart || 0);
+    var perRound = written > 0 && job.chaptersStarted ? (Date.now() - job.chaptersStarted) / Math.ceil(written / CHAPTER_CONCURRENCY) : 120000;
+    return Math.max(1, Math.ceil((rounds * perRound) / 60000));
   }
 
   // ----- The run -----
@@ -529,6 +656,9 @@
       // 2) Chapters not written yet
       var todo = [];
       job.outline.chapters.forEach(function (c, i) { if (!job.chapters[i]) todo.push(i); });
+      job.chaptersStarted = Date.now();
+      job.chaptersAtStart = job.chapters.filter(Boolean).length;
+      job.lastEta = 0;
       updateOverall("장을 쓰고 있어요");
       var failures = [];
       var next = 0;
@@ -605,6 +735,9 @@
         transcriptChars: job.transcript.length,
         models: job.models.filter(function (m, i, a) { return m && a.indexOf(m) === i; }),
       },
+      kind: o.kind,
+      speakerRole: o.speakerRole,
+      speaksAs: o.speaksAs,
       title: o.title,
       subtitle: o.subtitle,
       subjectName: o.subjectName || job.settings.subjectName,
@@ -625,8 +758,11 @@
           pullQuote: w.pullQuote,
           excerpt: w.excerpt,
           unverified: w.unverified || [],
+          unsupported: w.unsupported || [],
         };
       }),
+      keyTerms: o.keyTerms || [],
+      frameUnsupported: o.frameUnsupported || [],
       lastWords: o.lastWords,
       timeline: o.timeline,
       epilogue: o.epilogue,
