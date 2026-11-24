@@ -248,7 +248,10 @@
       }
       var data = {};
       try { data = await res.json(); } catch (e) {}
-      if (res.ok) return data.text || "";
+      if (res.ok) {
+        if (data.engine && tx) (tx.engines = tx.engines || {})[data.engine] = true;
+        return data.text || "";
+      }
       if (res.status === 429 && data.retryAfter && waits++ < 20) {
         onWait(data.retryAfter);
         await sleep(data.retryAfter * 1000);
@@ -369,7 +372,8 @@
       $("fixes-status").textContent = "AI가 확실히 잘못 들린 말을 찾지 못했어요. 그래도 이름과 숫자는 한 번 훑어봐 주세요.";
       return;
     }
-    $("fixes-status").textContent = fixes.length + "곳을 찾았어요. AI가 확실하다고 본 것만 미리 체크해 두었어요. 녹음을 떠올리며 맞는 것만 체크하고 ‘체크한 것 고치기’를 누르세요.";
+    var places = fixes.reduce(function (n, f) { return n + (current.split(f.heard).length - 1); }, 0);
+    $("fixes-status").textContent = "고칠 만한 말 " + fixes.length + "개(모두 " + places + "곳)를 찾았어요. AI가 확실하다고 본 것만 미리 체크해 두었어요. 녹음을 떠올리며 맞는 것만 체크하고 ‘체크한 것 고치기’를 누르세요.";
     fixes.forEach(function (f, i) {
       var li = document.createElement("li");
       var label = document.createElement("label");
@@ -391,15 +395,28 @@
       var at = current.indexOf(f.heard);
       var ctx = document.createElement("span");
       ctx.className = "fixes__why";
-      ctx.textContent = "…" + current.slice(Math.max(0, at - 18), at).replace(/\s+/g, " ") + "［" + f.heard + "］" + current.slice(at + f.heard.length, at + f.heard.length + 18).replace(/\s+/g, " ") + "…" + (count > 1 ? " (" + count + "곳)" : "");
+      var mark = document.createElement("mark");
+      mark.textContent = f.heard;
+      ctx.append(
+        "…" + current.slice(Math.max(0, at - 18), at).replace(/\s+/g, " "),
+        mark,
+        current.slice(at + f.heard.length, at + f.heard.length + 18).replace(/\s+/g, " ") + "…" + (count > 1 ? " (" + count + "곳)" : "")
+      );
       var why = document.createElement("span");
       why.className = "fixes__why";
       why.textContent = (f.kind === "number" ? "숫자 · 꼭 확인 — " : f.kind === "term" ? "이름·용어 — " : "") + f.why;
+      box.addEventListener("change", syncApply);
       label.append(box, change, ctx, why);
       li.appendChild(label);
       list.appendChild(li);
     });
     $("fixes-apply").hidden = false;
+    syncApply();
+  }
+
+  function syncApply() {
+    var any = $("fixes-list").querySelectorAll("input:checked:not(:disabled)").length > 0;
+    $("fixes-apply").disabled = !any;
   }
 
   $("fixes-find").addEventListener("click", findFixes);
@@ -408,17 +425,21 @@
     var box = $("transcript");
     beforeFixes = box.value;
     var applied = 0;
-    $("fixes-list").querySelectorAll("input:checked").forEach(function (c) {
+    var words = 0;
+    $("fixes-list").querySelectorAll("input:checked:not(:disabled)").forEach(function (c) {
       var n = box.value.split(c.dataset.heard).length - 1;
       if (n) {
         box.value = box.value.split(c.dataset.heard).join(c.dataset.meant);
         applied += n;
+        words++;
       }
+      // Keep the list visible: applied items are greyed out, unticked ones can still be applied.
+      c.disabled = true;
+      c.closest("li").classList.add("is-applied");
     });
     onTranscriptInput();
-    $("fixes-list").textContent = "";
-    $("fixes-apply").hidden = true;
-    $("fixes-status").textContent = applied + "곳을 고쳤어요. 나머지도 한 번 훑어봐 주세요.";
+    syncApply();
+    $("fixes-status").textContent = words + "개 말을 " + applied + "곳에서 고쳤어요. 나머지도 한 번 훑어봐 주세요.";
     $("fixes-undo").hidden = false;
   });
   $("fixes-undo").addEventListener("click", function () {
@@ -427,6 +448,12 @@
     beforeFixes = null;
     onTranscriptInput();
     $("fixes-undo").hidden = true;
+    $("fixes-list").querySelectorAll("li.is-applied").forEach(function (li) {
+      li.classList.remove("is-applied");
+      var c = li.querySelector("input");
+      if (c.dataset.meant !== "?") c.disabled = false;
+    });
+    syncApply();
     $("fixes-status").textContent = "고치기 전으로 되돌렸어요.";
   });
   $("merge-replace").addEventListener("click", function () {
@@ -475,6 +502,7 @@
     return {
       subjectName: $("subject").value.trim(),
       interviewer: $("interviewer").value.trim(),
+      subjectRole: $("role").value.trim(),
       interviewDate: $("date").value.trim(),
       interviewPlace: $("place").value.trim(),
       voice: document.querySelector('input[name="voice"]:checked').value,
@@ -529,6 +557,7 @@
       chapters: [],
       models: [],
       audioSeconds: tx && tx.done && tx.prepared.duration ? Math.round(tx.prepared.duration) : null,
+      transcribers: tx && tx.done && tx.engines ? Object.keys(tx.engines) : [],
       startedAt: Date.now(),
     };
     saveJob();
@@ -589,7 +618,8 @@
       if (left > 0) {
         // Never let the estimate go up: a growing countdown worries people more than a vague one.
         job.lastEta = job.lastEta ? Math.min(job.lastEta, left) : left;
-        eta = job.lastEta <= 1 ? " · 거의 다 됐어요" : " · 약 " + job.lastEta + "분 남음";
+        var remaining = job.outline.chapters.length - job.chapters.filter(Boolean).length;
+        eta = job.lastEta <= 1 ? (remaining <= 1 ? " · 거의 다 됐어요" : " · 1분 안팎 남음") : " · 약 " + job.lastEta + "분 남음";
       }
     }
     $("overall-eta").textContent = eta;
@@ -732,8 +762,8 @@
       settings: job.settings,
       meta: {
         audioSeconds: job.audioSeconds,
-        transcriptChars: job.transcript.length,
         models: job.models.filter(function (m, i, a) { return m && a.indexOf(m) === i; }),
+        transcribers: job.transcribers || [],
       },
       kind: o.kind,
       speakerRole: o.speakerRole,

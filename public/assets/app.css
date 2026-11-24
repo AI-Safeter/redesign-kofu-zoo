@@ -156,6 +156,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .fixes__list input { margin-top: 0.35em; width: 18px; height: 18px; accent-color: var(--accent); }
 .fixes__change { font-size: 0.95rem; word-break: keep-all; }
 .fixes__change del { color: var(--ink-soft); }
+.fixes__why mark { background: var(--accent-soft); color: var(--ink); padding: 0 2px; border-radius: 3px; }
+.fixes__list li.is-applied { opacity: 0.55; }
 .fixes__change ins { text-decoration: none; font-weight: 600; color: var(--accent); }
 .fixes__why { grid-column: 2; font-size: 0.85rem; color: var(--ink-soft); word-break: keep-all; }
 .fixes .primary { margin-top: 10px; }
@@ -189,7 +191,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .dropzone__icon { font-size: 1.8rem; color: var(--accent); line-height: 1; margin-bottom: 6px; }
 .dropzone__main { font-weight: 600; word-break: keep-all; }
-.dropzone__sub { font-size: 0.85rem; color: var(--ink-soft); }
+.dropzone__sub { font-size: 0.85rem; color: var(--ink-soft); word-break: keep-all; }
 .file-info { margin: 0 0 16px; font-size: 0.95rem; color: var(--ink-soft); word-break: break-all; }
 
 /* Buttons */

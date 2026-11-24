@@ -47,6 +47,7 @@ export function readSettings(body) {
       subjectName: clip(s.subjectName, 60),
       interviewDate: clip(s.interviewDate, 40),
       interviewer: clip(s.interviewer, 60),
+      subjectRole: clip(s.subjectRole, 80),
       interviewPlace: clip(s.interviewPlace, 60),
       voice: ["first", "third", "oral"].includes(s.voice) ? s.voice : "first",
       // Spellings of names and terms in the recording (the same hint the transcription uses).
@@ -113,6 +114,7 @@ ${settings.voice === "oral"
 
 # This book
 - Main character: ${settings.subjectName || "(not given — take the name from the interview if mentioned)"}
+- The speaker's title/affiliation: ${settings.subjectRole || "(not given — take it from the interview if stated)"}
 - Interviewer: ${settings.interviewer || "(not given)"}
 - Interview date: ${settings.interviewDate || "(not given)"}
 ${settings.terms ? `- Correct spellings of names and terms in this recording (use exactly these): ${settings.terms}` : ""}
@@ -125,7 +127,7 @@ function outlineRequest(settings, transcript) {
   return `Plan the e-book from the interview above. First decide what kind of interview it is, then gather the evidence, then write the short framing texts.
 
 - kind: "life" if the interview is mainly the story of the person's life (childhood, work, family, events over the years); "work" if it is mainly about their work, ideas, a project or a craft rather than events of their life; "mixed" if it is substantially both.
-- speakerRole: who the speaker is, in a few words, from the interview (e.g. "은퇴한 초등학교 교사", "시장에서 국숫집을 한 사람").
+- speakerRole: who the speaker is, in a few words${settings.subjectRole ? ` — use exactly: ${settings.subjectRole}` : ', from the interview (e.g. "은퇴한 초등학교 교사", "시장에서 국숫집을 한 사람")'}. Put the name of an organization or program in single quotes (e.g. 극단 '해' 대표) so it is not read as an ordinary word.
 - speaksAs: "우리" if the speaker mostly speaks for a team or group ("저희"), else "나".
 - title: a short, evocative Korean book title drawn from the person's own words or life (not generic like "나의 인생").
 - subtitle: one line, e.g. "○○○ 이야기".

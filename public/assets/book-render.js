@@ -42,6 +42,8 @@
   // Typographer's quotes: "…" → “…”, 「…」 → “…”, '…' → ‘…’.
   function smart(s) {
     return String(s || "")
+      .replace(/(\d)\s?-\s?(\d+\s?(명|회|개|살|세|분|시간|달|주|년|차시|회기))/g, "$1~$2")
+      .replace(/(\S)\s+-\s+(\S)/g, "$1: $2")
       .replace(/"([^"\n]*)"/g, "“$1”")
       .replace(/[「『]([^」』\n]*)[」』]/g, "“$1”")
       .replace(/(^|[\s(\[“])'([^'\n]*)'/g, "$1‘$2’");
@@ -110,9 +112,9 @@
         ]),
         el("div", { className: "cover__bottom" }, [
           teller ? el("p", { className: "cover__teller", text: teller }) : null,
-          book.subjectName && book.speakerRole ? el("p", { className: "cover__origin", text: book.speakerRole }) : null,
+          book.subjectName && book.speakerRole ? txt("p", "cover__origin", book.speakerRole, "speakerRole") : null,
           origin ? el("p", { className: "cover__origin", text: origin + " 출생" }) : null,
-          el("p", { className: "cover__imprint", text: (book.kind === "life" || !book.kind ? "가족이 엮은 책 · " : "엮은 해 · ") + created }),
+          el("p", { className: "cover__imprint", text: book.kind === "life" || !book.kind ? "가족이 엮은 책 · " + created : created + "년 " + (new Date(book.createdAt || Date.now()).getMonth() + 1) + "월" }),
         ]),
       ]),
     };
@@ -218,6 +220,11 @@
         }
       }
       if (quoteAfter < 0) quoteOpens = true;
+      // 구술 정리: the body is the speaker's words; a quote that doesn't match it is raw transcript.
+      if (quoteAfter < 0 && book.settings && book.settings.voice === "oral") {
+        q = null;
+        quoteOpens = false;
+      }
       // In 구술 정리 the body already is the speaker's words: don't print them twice.
       if (quoteAfter >= 0 && book.settings && book.settings.voice === "oral") {
         q = null;
@@ -299,8 +306,10 @@
   }
 
   function lastWordsPage(book) {
+    var ep = norm(book.epigraph);
+    var words = (book.lastWords || []).filter(function (w) { return !ep || norm(w) !== ep; });
     var letter = el("div", { className: "letter" }, [
-      prose(book.lastWords, "lastWords"),
+      prose(words, "lastWords"),
       book.subjectName ? el("p", { className: "letter__sign", text: "— " + book.subjectName }) : null,
     ]);
     return {
@@ -364,8 +373,8 @@
       ["이야기한 사람", [book.subjectName, book.birthYear ? book.birthYear + "년생" : ""].filter(Boolean).join(", ")],
       ["들은 사람", s.interviewer],
       ["인터뷰", [s.interviewDate, s.interviewPlace].filter(Boolean).join(", ")],
-      ["녹음", m.audioSeconds ? Math.round(m.audioSeconds / 60) + "분" : ""],
-      ["녹취록", m.transcriptChars ? m.transcriptChars.toLocaleString("ko-KR") + "자" : ""],
+      ["녹음", m.audioSeconds ? Math.floor(m.audioSeconds / 60) + "분" + (m.audioSeconds % 60 ? " " + Math.round(m.audioSeconds % 60) + "초" : "") : ""],
+      ["받아쓰기", (m.transcribers || []).map(modelName).join(", ")],
       ["만든 날", book.createdAt && !m.origin ? new Date(book.createdAt).toLocaleDateString("ko-KR") : ""],
       ["글쓴 AI", (m.models || []).map(modelName).join(", ")],
     ].filter(function (r) { return r[1]; });
@@ -380,7 +389,13 @@
       txt("p", "colophon__title", book.title, null),
       dl,
       // How the book was made: the sample says so itself; generated books get the standard line.
-      el("p", { text: m.origin || "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 썼습니다. 인용은 녹취록과 대조했지만, 받아쓰기 오류가 남아 있을 수 있습니다." }),
+      el("p", {
+        text:
+          m.origin ||
+          (s.voice === "oral"
+            ? "인터뷰 녹음을 글로 옮긴 뒤, 말한 사람의 말투를 살려 AI가 읽기 좋게 다듬었습니다. 받아쓰기 오류가 남아 있을 수 있습니다."
+            : "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 썼습니다. 인용은 녹취록과 대조했지만, 받아쓰기 오류가 남아 있을 수 있습니다."),
+      }),
       (book.timeline || []).some(function (t) { return t.approx; }) ? el("p", { text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." }) : null,
     ]);
     colophon.firstChild.removeAttribute("data-path");
@@ -394,13 +409,14 @@
 
   // "nvidia/nemotron-3-ultra-550b-a55b:free" → "Nemotron 3 Ultra (무료)"
   function modelName(id) {
-    var known = { claude: "Claude", nemotron: "NVIDIA Nemotron", ernie: "Baidu ERNIE", gemma: "Google Gemma", mock: "시험 모드" };
+    var known = { claude: "Claude", nemotron: "NVIDIA Nemotron", ernie: "Baidu ERNIE", gemma: "Google Gemma", qwen: "Qwen Omni", gemini: "Google Gemini", groq: "Whisper", whisper: "Whisper", mock: "시험 모드" };
+    if (/^groq$/i.test(id)) return "Whisper";
     var base = String(id).split("/").pop();
     var free = /:free$/.test(base);
     base = base.replace(/:free$/, "");
     var key = Object.keys(known).filter(function (k) { return base.indexOf(k) === 0; })[0];
     var name = key ? known[key] : base;
-    return name + (free ? " (무료 모델)" : "");
+    return name;
   }
 
   function buildPages(book) {
