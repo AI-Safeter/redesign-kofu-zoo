@@ -651,6 +651,13 @@ function numbersIn(textValue) {
   return out;
 }
 
+/** Standalone 뭐/이제/막 per 1,000 characters: high means the text still reads like raw speech. */
+function fillerDensity(paragraphsList) {
+  const all = paragraphsList.join(" ");
+  const n = (all.match(/(^|\s)(뭐|이제|막)(?=\s)/g) || []).length;
+  return all.length ? (n * 1000) / all.length : 0;
+}
+
 function numberMismatch(sentence, index) {
   if (!index?.numbers) return false;
   for (const n of numbersIn(sentence)) if (!index.numbers.has(n)) return true;
