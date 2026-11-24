@@ -852,7 +852,6 @@
         await Library.download(book);
         return;
       }
-      if (job.transcript.length < 150000) Library.saveTranscript(book.id, job.transcript);
       sset(localStorage, DRAFT_KEY, "");
       updateOverall("완성! 책을 펼칩니다");
       $("overall-bar").style.width = "100%";
