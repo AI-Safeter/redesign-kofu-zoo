@@ -5,7 +5,7 @@
 // Standalone hesitation sounds (음, 어, 으음, 아) are ignored on both sides of a comparison,
 // so a quote with fillers removed still matches the transcript.
 const FILLERS = /(^|[\s,.])(음+|어+|으음|아+)(?=[\s,.]|$)/g;
-export const norm = (s) => String(s || "").toLowerCase().replace(FILLERS, "$1").replace(/[^가-힣a-z0-9]/g, "");
+const norm = (s) => String(s || "").toLowerCase().replace(FILLERS, "$1").replace(/[^가-힣a-z0-9]/g, "");
 
 function grams(s, n = 3) {
   const out = new Set();

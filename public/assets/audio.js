@@ -14,18 +14,16 @@
   // Small files are sent as they are only in formats every engine accepts (the audio models
   // take WAV and MP3); anything else is decoded and sent as WAV pieces.
   var DIRECT_TYPES = /\.(mp3|wav)$/i;
+  var MAX_SEC = 3 * 3600;
+  var TOO_LONG = "녹음이 3시간보다 깁니다. 휴대폰이나 브라우저가 멈출 수 있으니 2시간 이하로 나눠서 올려 주세요.";
 
   function decode(arrayBuffer) {
     var Ctx = window.AudioContext || window.webkitAudioContext;
     var ctx = new Ctx({ sampleRate: RATE });
+    // Older Safari only calls back; newer browsers also return a promise. The first to settle wins.
     return new Promise(function (resolve, reject) {
-      var done = false;
-      var p = ctx.decodeAudioData(
-        arrayBuffer,
-        function (b) { done = true; resolve(b); },
-        function (e) { done = true; reject(e || new Error("decode failed")); }
-      );
-      if (p && p.then) p.then(function (b) { if (!done) resolve(b); }, function (e) { if (!done) reject(e); });
+      var p = ctx.decodeAudioData(arrayBuffer, resolve, function (e) { reject(e || new Error("decode failed")); });
+      if (p && p.then) p.then(resolve, reject);
     }).finally(function () {
       if (ctx.close) ctx.close();
     });
@@ -83,11 +81,6 @@
     return new Blob([buffer], { type: "audio/wav" });
   }
 
-  /**
-   * Returns { duration (seconds or null), chunks: [{ getBlob(), name, type, start, end }] }.
-   * WAV data for a chunk is only built when getBlob() is called, so a long recording
-   * never holds every encoded chunk in memory at once.
-   */
   // Reads the duration from the file's metadata without decoding it.
   function metadataSeconds(file) {
     return new Promise(function (resolve) {
@@ -102,12 +95,14 @@
     });
   }
 
+  /**
+   * Returns { duration (seconds), chunks: [{ getBlob(), name, type }] }.
+   * WAV data for a chunk is only built when getBlob() is called, so a long recording
+   * never holds every encoded chunk in memory at once.
+   */
   async function prepare(file) {
     // Refuse very long recordings before decoding them, which could crash a phone's browser.
-    var known = await metadataSeconds(file);
-    if (known && known > 3 * 3600) {
-      throw new Error("녹음이 3시간보다 깁니다. 휴대폰이나 브라우저가 멈출 수 있으니 2시간 이하로 나눠서 올려 주세요.");
-    }
+    if ((await metadataSeconds(file)) > MAX_SEC) throw new Error(TOO_LONG);
     var direct = file.size <= DIRECT_MAX && DIRECT_TYPES.test(file.name);
     var buffer;
     try {
@@ -118,15 +113,13 @@
     }
 
     var duration = buffer.duration;
-    if (duration > 3 * 3600) {
-      throw new Error("녹음이 3시간보다 깁니다. 휴대폰이나 브라우저가 멈출 수 있으니 2시간 이하로 나눠서 올려 주세요.");
-    }
+    if (duration > MAX_SEC) throw new Error(TOO_LONG);
     // Small files the API accepts as-is: send the original (better quality, fewer requests).
     if (direct) {
-      return { duration: duration, chunks: [whole(file, duration)] };
+      return { duration: duration, chunks: [whole(file)] };
     }
 
-    var rate = buffer.sampleRate || RATE;
+    var rate = buffer.sampleRate;
     var samples = toMono(buffer);
     buffer = null;
     var chunks = [];
@@ -144,8 +137,8 @@
     return { duration: duration, chunks: chunks };
   }
 
-  function whole(file, duration) {
-    return { getBlob: function () { return file; }, name: file.name, type: file.type || "audio/mpeg", start: 0, end: duration };
+  function whole(file) {
+    return { getBlob: function () { return file; }, name: file.name, type: file.type || "audio/mpeg" };
   }
 
   function piece(samples, from, to, rate, n) {
@@ -153,8 +146,6 @@
       getBlob: function () { return encodeWav(samples.subarray(from, to), rate); },
       name: "chunk-" + n + ".wav",
       type: "audio/wav",
-      start: from / rate,
-      end: to / rate,
     };
   }
 

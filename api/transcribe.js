@@ -11,6 +11,7 @@ import { mockTranscribe } from "./_lib/mock.js";
 import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels } from "./_lib/audio-llm.js";
 
 const MAX_BYTES = 4_400_000;
+const TRY_AGAIN = "음성 인식에 잠시 문제가 생겼어요. 잠시 후 다시 눌러 주세요.";
 
 const PROVIDERS = {
   groq: {
@@ -33,7 +34,7 @@ export function canTranscribe() {
   return audioModelsEnabled() || Boolean(transcriptionProvider());
 }
 
-export function transcriptionProvider() {
+function transcriptionProvider() {
   const wanted = (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase();
   if (PROVIDERS[wanted] && process.env[PROVIDERS[wanted].keyEnv]) return PROVIDERS[wanted];
   if (process.env.GROQ_API_KEY) return PROVIDERS.groq;
@@ -144,14 +145,14 @@ async function recognize(provider, { audio, type, name, model, prompt, signal })
       };
     }
     const message =
-      res.status === 401 ? "음성 인식 서비스 설정에 문제가 있어요. 사이트 관리자에게 알려 주세요." : "음성 인식에 잠시 문제가 생겼어요. 잠시 후 다시 눌러 주세요.";
+      res.status === 401 ? "음성 인식 서비스 설정에 문제가 있어요. 사이트 관리자에게 알려 주세요." : TRY_AGAIN;
     return { error: errorResponse(message, 502) };
   }
   let data;
   try {
     data = await res.json();
   } catch {
-    return { error: errorResponse("음성 인식에 잠시 문제가 생겼어요. 잠시 후 다시 눌러 주세요.", 502) };
+    return { error: errorResponse(TRY_AGAIN, 502) };
   }
   return { text: String(data.text || "").trim(), segments: Array.isArray(data.segments) ? data.segments : null };
 }

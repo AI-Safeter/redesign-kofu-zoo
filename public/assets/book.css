@@ -231,7 +231,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 }
 .page h2:focus, .page h1:focus { outline: none; }
 
-/* Running text: justified by character (no big gaps in Korean), indented paragraphs, tight gaps. */
+/* Running text: ragged right (with Korean word-keeping, justified lines get wide gaps), indented paragraphs, tight gaps. */
 .prose p {
   font-size: var(--text-size);
   line-height: var(--leading);
@@ -247,8 +247,6 @@ body { min-height: 100vh; min-height: 100dvh; }
 }
 .prose p:first-child, .prose figure + p, .prose p.lead { text-indent: 0; }
 .prose p.lead { font-size: calc(var(--text-size) * 1.06); }
-
-/* Ragged right everywhere: with Korean word-keeping (keep-all), justified lines get wide gaps. */
 
 /* Cover: a framed title page */
 .page--cover .page__inner { padding: clamp(14px, 3vw, 22px); }
@@ -317,7 +315,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .toc__extra .toc__title { color: var(--ink-soft); }
 
 /* People */
-.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.people { list-style: none; margin: 0; padding: 0; display: grid; }
 .people li {
   display: grid;
   grid-template-columns: 6.5em 1fr;
@@ -401,7 +399,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .excerpt__q::before { content: "묻는 말 — "; color: var(--muted); }
 .excerpt__a { margin: 0; line-height: 1.75; word-break: keep-all; }
 
-/* Quotes the system could not find in the transcript — shown only while editing */
+/* Notes on what to check against the transcript — shown only while editing */
 .verify-note { display: none; }
 .is-editing .verify-note {
   display: block;
@@ -421,7 +419,7 @@ body { min-height: 100vh; min-height: 100dvh; }
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent-soft) 40%, var(--page));
 }
-.letter .prose p { font-size: calc(var(--text-size) * 1.06); text-indent: 0; margin-bottom: 1em; text-align: start; }
+.letter .prose p { font-size: calc(var(--text-size) * 1.06); text-indent: 0; margin-bottom: 1em; }
 .letter__sign { margin: 1.4em 0 0; text-align: right; font-size: var(--text-size); font-weight: 600; }
 
 /* Timeline (연보), grouped by chapter */
@@ -499,5 +497,4 @@ body { min-height: 100vh; min-height: 100dvh; }
   .excerpt, .letter { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .chapter__head, .page__heading { break-after: avoid; }
   .pullquote, .timeline__list li, .epigraph, .people li { break-inside: avoid; }
-  .prose p { text-align: start; }
 }

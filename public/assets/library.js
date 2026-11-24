@@ -56,7 +56,7 @@
 
   function del(id) {
     remove(BOOK + id);
-    remove(TRANSCRIPT + id);
+    remove(TRANSCRIPT + id); // transcripts saved by earlier versions
     write(INDEX, (read(INDEX) || []).filter(function (e) {
       return e.id !== id;
     }));
@@ -83,7 +83,7 @@
   function plainHtml(book) {
     var h = function (tag, text) { return text ? "<" + tag + ">" + esc(text) + "</" + tag + ">" : ""; };
     var paras = function (list) { return (list || []).map(function (p) { return h("p", p); }).join(""); };
-    var out = h("h1", book.title) + h("p", book.subtitle) + h("p", [book.subjectName, book.speakerRole].filter(Boolean).join(" · ")) + (book.epigraph ? "<blockquote>" + esc(book.epigraph) + "</blockquote>" : "");
+    var out = h("h1", book.title) + h("p", book.subtitle) + h("p", [book.subjectName, book.speakerRole].filter(Boolean).join(" · ")) + h("blockquote", book.epigraph);
     if (book.prologue && book.prologue.length) out += h("h2", "책을 펴내며") + paras(book.prologue);
     (book.chapters || []).forEach(function (c, i) {
       out += h("h2", "제" + (i + 1) + "장 " + c.title) + paras(c.paragraphs);
@@ -98,7 +98,7 @@
     if (!res[0].ok || !res[1].ok) throw new Error("파일을 불러오지 못했습니다.");
     var css = await res[0].text();
     var js = await res[1].text();
-    var data = JSON.stringify(book).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+    var data = JSON.stringify(book).replace(/</g, "\\u003c");
     return (
       '<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n' +
       '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
@@ -139,12 +139,6 @@
     save: save,
     remove: del,
     newId: newId,
-    saveTranscript: function (id, text) {
-      return write(TRANSCRIPT + id, text);
-    },
-    getTranscript: function (id) {
-      return read(TRANSCRIPT + id);
-    },
     download: download,
   };
 })();

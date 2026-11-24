@@ -64,6 +64,7 @@
     var n = parseInt(y, 10);
     return n > 1800 && n < 2200 ? n : null;
   }
+  var ageText = function (n) { return n === 0 ? "출생" : n + "세"; };
   function refYear(book) {
     var d = new Date(book.createdAt || Date.now());
     return isNaN(d) ? new Date().getFullYear() : d.getFullYear();
@@ -83,9 +84,8 @@
     if (from == null && to == null) return "";
     var a = from != null ? Math.max(0, from - born) : null;
     var b = to != null ? Math.max(0, to - born) : null;
-    var age = function (n) { return n === 0 ? "출생" : n + "세"; };
     if (a != null && b != null && a !== b) return (a === 0 ? "출생" : a) + "–" + b + "세";
-    return age(a != null ? a : b);
+    return ageText(a != null ? a : b);
   }
   function chapterLabel(i) {
     return "제" + (i + 1) + "장";
@@ -120,7 +120,7 @@
     };
   }
 
-  function contentsPage(book, layout) {
+  function contentsPage(layout) {
     var list = el("ol", { className: "toc" });
     layout.forEach(function (e) {
       if (!e.toc) return;
@@ -208,10 +208,13 @@
     var q = c.pullQuote && c.pullQuote.text ? c.pullQuote : null;
     if (q && c.excerpt && c.excerpt.a && norm(c.excerpt.a).indexOf(norm(q.text).slice(0, 20)) >= 0) q = null;
 
+    // 구술 정리: the body already is the speaker's words, so a pull quote would print them twice,
+    // and one that doesn't match them is raw transcript.
+    if (book.settings && book.settings.voice === "oral") q = null;
+
     // Put the pull quote one paragraph after the passage it echoes; if the words are not in
     // the text, it opens the chapter instead.
     var quoteAfter = -1;
-    var quoteOpens = false;
     if (q) {
       var nq = norm(q.text).slice(0, 24);
       for (var j = 0; j < paras.length; j++) {
@@ -220,25 +223,13 @@
           break;
         }
       }
-      if (quoteAfter < 0) quoteOpens = true;
-      // 구술 정리: the body is the speaker's words; a quote that doesn't match it is raw transcript.
-      if (quoteAfter < 0 && book.settings && book.settings.voice === "oral") {
-        q = null;
-        quoteOpens = false;
-      }
-      // In 구술 정리 the body already is the speaker's words: don't print them twice.
-      if (quoteAfter >= 0 && book.settings && book.settings.voice === "oral") {
-        q = null;
-        quoteAfter = -1;
-      }
     }
 
     var body = el("div", { className: "prose" });
     paras.forEach(function (p, j) {
       body.appendChild(txt("p", j === 0 ? "lead" : null, p, "chapters." + i + ".paragraphs." + j));
-      if (q && j === quoteAfter && j < paras.length - 1) body.appendChild(pullQuote(q, i));
+      if (q && j === quoteAfter) body.appendChild(pullQuote(q, i));
     });
-    if (q && quoteAfter === paras.length - 1 && paras.length > 0) body.appendChild(pullQuote(q, i));
 
     var meta = [yearsOf(c), agesOf(book, c), c.place].filter(Boolean);
     var head = el("header", { className: "chapter__head" }, [
@@ -278,7 +269,7 @@
     return {
       kind: "chapter",
       label: chapterLabel(i) + " " + c.title,
-      node: el("div", null, [check, head, q && quoteOpens ? pullQuote(q, i, true) : null, body, excerpt]),
+      node: el("div", null, [check, head, q && quoteAfter < 0 ? pullQuote(q, i, true) : null, body, excerpt]),
     };
   }
 
@@ -340,7 +331,7 @@
         var t = g.t;
         var y = t.year || t.when || "";
         var n = num(y);
-        var age = born && n ? (n - born === 0 ? "출생" : n - born + "세") : "";
+        var age = born && n ? ageText(n - born) : "";
         list.appendChild(
           el("li", null, [
             el("span", { className: "timeline__when" }, [
@@ -396,7 +387,7 @@
     return layout.map(function (e) {
       switch (e.kind) {
         case "cover": return coverPage(book);
-        case "contents": return contentsPage(book, layout);
+        case "contents": return contentsPage(layout);
         case "people": return peoplePage(book);
         case "prologue": return prologuePage(book);
         case "chapter": return chapterPage(book, book.chapters[e.chapter], e.chapter);
@@ -530,7 +521,6 @@
         className: "page page--" + p.kind,
         id: "page-" + (i + 1),
         "aria-label": p.label,
-        "data-index": i,
       }, [el("div", { className: "page__inner" }, [p.node, el("p", { className: "page__folio", "aria-hidden": "true", text: i === 0 ? "" : String(i + 1) })])]);
       stage.appendChild(section);
     });
@@ -649,7 +639,7 @@
     stage.addEventListener("paste", function (e) {
       if (!editing) return;
       e.preventDefault(); // paste as plain text only
-      var text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      var text = e.clipboardData.getData("text/plain");
       document.execCommand("insertText", false, text);
     });
 
@@ -670,7 +660,6 @@
 
     syncPanel();
     go(fromHash(), false);
-    return { go: go, book: book };
   }
 
   function button(label, title, onClick) {

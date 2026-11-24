@@ -63,29 +63,6 @@
     return "일시적인 서버 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.";
   }
 
-  /**
-   * Runs `worker(item, index)` over items with limited parallelism. After the first
-   * failure no new items start; items already running finish. Rejects with that failure.
-   */
-  async function pool(items, limit, worker) {
-    var next = 0;
-    var failure = null;
-    async function lane() {
-      while (next < items.length && !failure) {
-        var i = next++;
-        try {
-          await worker(items[i], i);
-        } catch (e) {
-          failure = failure || e;
-        }
-      }
-    }
-    var lanes = [];
-    for (var k = 0; k < Math.min(limit, items.length); k++) lanes.push(lane());
-    await Promise.all(lanes);
-    if (failure) throw failure;
-  }
-
   async function withRetry(fn, tries) {
     for (var attempt = 1; ; attempt++) {
       try {
@@ -206,23 +183,19 @@
     }
     audioFile = file;
     tx = null;
-    showFileInfo();
+    $("file-info").classList.remove("is-error");
+    $("file-info").textContent = "선택한 파일: " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + "MB)";
+    $("file-info").hidden = false;
     $("transcribe-btn").hidden = false;
     $("transcribe-retry").hidden = true;
     $("transcribe-progress").hidden = true;
-    $("transcribe-btn").disabled = busy || !config.transcription;
+    $("transcribe-btn").disabled = !config.transcription;
   }
 
   function showFileProblem(msg) {
     $("file-info").textContent = msg;
     $("file-info").hidden = false;
     $("file-info").classList.add("is-error");
-  }
-  function showFileInfo() {
-    if (!audioFile) return;
-    $("file-info").classList.remove("is-error");
-    $("file-info").textContent = "선택한 파일: " + audioFile.name + " (" + (audioFile.size / 1024 / 1024).toFixed(1) + "MB)";
-    $("file-info").hidden = false;
   }
 
   $("audio-file").addEventListener("change", function (e) { setFile(e.target.files[0]); });
@@ -241,9 +214,8 @@
     var f = e.dataTransfer.files[0];
     if (f) setFile(f);
   });
-  if (window.matchMedia && matchMedia("(pointer: coarse)").matches) {
-    $("dropzone-main").textContent = "눌러서 녹음 파일 고르기";
-  }
+  var coarsePointer = window.matchMedia && matchMedia("(pointer: coarse)").matches; // phones and tablets
+  if (coarsePointer) $("dropzone-main").textContent = "눌러서 녹음 파일 고르기";
 
   function setTranscribeProgress(fraction, label, isError, indeterminate) {
     var box = $("transcribe-progress");
@@ -279,7 +251,7 @@
       try { data = await res.json(); } catch (e) {}
       if (res.ok) {
         if (data.engine && tx) (tx.engines = tx.engines || {})[data.engine] = true;
-        if (tx) (tx.alts = tx.alts || [])[i] = data.alt || "";
+        if (tx) tx.alts[i] = data.alt || "";
         return data.text || "";
       }
       if (res.status === 429 && data.retryAfter && waits++ < 20) {
@@ -301,7 +273,7 @@
   }
   function saveTxProgress() {
     if (!tx) return;
-    sset(localStorage, TX_KEY, JSON.stringify({ id: tx.id, name: tx.file.name, total: tx.total, texts: tx.texts, alts: tx.alts || [] }));
+    sset(localStorage, TX_KEY, JSON.stringify({ id: tx.id, name: tx.file.name, total: tx.total, texts: tx.texts, alts: tx.alts }));
   }
 
   async function transcribe() {
@@ -311,7 +283,7 @@
     if (tx && tx.file === audioFile && tx.hint !== hint) tx = null;
 
     // Long recordings can crash a phone's browser while decoding.
-    if (!tx && window.matchMedia && matchMedia("(pointer: coarse)").matches) {
+    if (!tx && coarsePointer) {
       var secs = await AudioChunker.duration(audioFile);
       if (secs && secs > 90 * 60 &&
           !confirm("녹음이 " + formatDuration(secs) + "이에요. 휴대폰에서는 90분이 넘는 녹음을 받아쓰다 멈출 수 있어요. 컴퓨터에서 하시길 권해요. 그래도 계속할까요?")) return;
@@ -358,7 +330,8 @@
       progress();
 
       // One piece at a time, so each piece gets the end of the previous one as context.
-      await pool(todo, 1, async function (i) {
+      for (var t = 0; t < todo.length; t++) {
+        var i = todo[t];
         tx.texts[i] = await transcribeChunk(chunks[i], i, hint, function (sec) {
           progress("사용량 한도로 " + sec + "초 기다리는 중… ");
         }, i > 0 ? tx.texts[i - 1] : "");
@@ -366,7 +339,7 @@
         doneHere++;
         saveTxProgress();
         progress();
-      });
+      }
 
       // Pieces were cut mid-speech: join with a space unless the piece ended a sentence.
       var join = function (list) {
@@ -379,7 +352,7 @@
         }, "");
       };
       var text = join(tx.texts);
-      tx.altText = tx.alts ? join(tx.alts) : "";
+      tx.altText = join(tx.alts);
       setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자. 아래 2단계에서 확인해 주세요.");
       tx.done = true; // before delivering: proofreading starts right away and needs the second transcription
       tx.prepared = { duration: tx.prepared.duration, chunks: [] }; // release the decoded audio
@@ -419,8 +392,7 @@
       pendingText = text;
       $("merge-choice").hidden = false;
       // The old suggestions belong to the old text.
-      $("fixes-list").textContent = "";
-      $("fixes-apply").hidden = true;
+      hideFixes();
       setTimeout(function () { $("merge-replace").focus({ preventScroll: true }); }, 400);
       $("merge-choice").scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -438,22 +410,35 @@
 
   // ----- AI proofreading: suggestions the user accepts one by one -----
 
+  // The box stays hidden unless the AI is checking or has something to suggest.
   var fixesBusy = false;
+  var fixesAgain = false; // a new transcript arrived while a check was running
+  var checkedText = ""; // the transcript (spaces removed) last sent for checking; "" = not checked yet
+  var squash = function (s) { return s.replace(/\s+/g, ""); };
+  function hideFixes() {
+    $("fixes-box").hidden = true;
+    $("fixes-status").textContent = "";
+    $("fixes-list").textContent = "";
+    $("fixes-apply").hidden = true;
+    $("fixes-retry").hidden = true;
+  }
   async function findFixes() {
     var transcript = $("transcript").value.trim();
-    if (fixesBusy) return;
+    if (fixesBusy) {
+      fixesAgain = true;
+      return;
+    }
     if (transcript.length < 200) {
-      $("fixes-list").textContent = "";
-      $("fixes-apply").hidden = true;
-      $("fixes-status").textContent = "녹취록이 200자 이상이어야 찾을 수 있어요.";
+      hideFixes();
       return;
     }
     fixesBusy = true;
+    checkedText = squash(transcript);
     forgetUndo();
-    $("fixes-find").disabled = true;
-    $("fixes-list").textContent = "";
-    $("fixes-apply").hidden = true;
-    $("fixes-status").textContent = "AI가 녹취록을 읽으며 잘못 들린 말을 찾는 중… (1분 안팎)";
+    hideFixes();
+    $("fixes-box").hidden = false;
+    // Screen readers announce a live region only if it was already shown before its text changed.
+    var announce = setTimeout(function () { $("fixes-status").textContent = "AI가 녹취록에서 잘못 들린 말을 찾고 있어요… (1분 안팎)"; }, 100);
     try {
       var res = await withRetry(function () {
         return streamCall("/api/fixes", {
@@ -464,10 +449,15 @@
       }, 2);
       renderFixes(res.fixes || []);
     } catch (e) {
-      $("fixes-status").textContent = "찾지 못했어요: " + e.message + " 직접 훑어보고 고쳐도 됩니다.";
+      $("fixes-status").textContent = "잘못 들린 말을 찾지 못했어요: " + e.message;
+      $("fixes-retry").hidden = false;
     } finally {
+      clearTimeout(announce); // a quick result or error must not be overwritten by the "checking" text
       fixesBusy = false;
-      $("fixes-find").disabled = false;
+      if (fixesAgain) {
+        fixesAgain = false;
+        findFixes();
+      }
     }
   }
 
@@ -477,12 +467,13 @@
     var current = $("transcript").value;
     fixes = fixes.filter(function (f) { return current.indexOf(f.heard) >= 0; });
     if (!fixes.length) {
-      $("fixes-status").textContent = "AI가 확실히 잘못 들린 말을 찾지 못했어요. 그래도 이름과 숫자는 한 번 훑어봐 주세요.";
+      // Say so, or "checked, nothing found" looks the same as "never checked".
+      $("fixes-status").textContent = "AI가 잘못 들린 말을 찾지 못했어요. 이름과 숫자만 한 번 훑어봐 주세요.";
       return;
     }
     var places = fixes.reduce(function (n, f) { return n + (f.heard.length <= 2 ? 1 : current.split(f.heard).length - 1); }, 0);
-    $("fixes-status").textContent = "고칠 만한 말 " + fixes.length + "개(모두 " + places + "곳)를 찾았어요. AI가 확실하다고 본 것만 미리 체크해 두었어요. 녹음을 떠올리며 맞는 것만 체크하고 ‘체크한 것 고치기’를 누르세요.";
-    fixes.forEach(function (f, i) {
+    $("fixes-status").textContent = "AI가 " + fixes.length + "개(" + places + "곳)를 찾았어요. 확실한 것만 미리 체크해 두었으니, 맞는 것만 남기고 ‘체크한 것 고치기’를 누르세요.";
+    fixes.forEach(function (f) {
       var li = document.createElement("li");
       var label = document.createElement("label");
       var box = document.createElement("input");
@@ -529,7 +520,22 @@
     $("fixes-apply").disabled = !any;
   }
 
-  $("fixes-find").addEventListener("click", findFixes);
+  $("fixes-retry").addEventListener("click", function () {
+    $("transcript").focus(); // the button hides itself; keep keyboard focus somewhere useful
+    findFixes();
+  });
+  // A pasted transcript gets the same check as a transcribed one. A short paste, or text moved
+  // within the transcript, is an edit: re-checking would throw away the suggestions in progress.
+  $("transcript").addEventListener("paste", function (e) {
+    var pasted = e.clipboardData.getData("text") || "";
+    if (!config.writing || pasted.length < 200 || checkedText.indexOf(squash(pasted)) >= 0) return;
+    if (tx) tx.altText = ""; // the second transcription belongs to the recording, not to this text
+    setTimeout(findFixes, 0); // the pasted text is in the box on the next task
+  });
+  // Typed text, text pasted in small pieces or inserted by a phone keyboard: check once, on leaving the box.
+  $("transcript").addEventListener("change", function () {
+    if (config.writing && !checkedText) findFixes();
+  });
   // Undo restores the transcript as it was before the last "고치기", and re-enables only that
   // batch's items. Any later change to the transcript ends the chance to undo.
   var beforeFixes = null;
@@ -595,38 +601,20 @@
 
   var draftTimer;
   function onTranscriptInput(fromFixes) {
-    if (fromFixes !== true) forgetUndo(); // typing, replacing or a new transcript ends undo
+    if (fromFixes !== true) forgetUndo(); // typing or a new transcript ends undo
     if (pendingText && !$("transcript").value.trim() && !$("merge-choice").hidden) {
       $("transcript").value = pendingText;
       pendingText = null;
       $("merge-choice").hidden = true;
+      if (config.writing) setTimeout(findFixes, 0);
     }
     var v = $("transcript").value;
+    if (v.trim().length < 200) checkedText = "";
     $("transcript-count").textContent = v.length.toLocaleString() + "자" + (v.length && v.length < 200 ? " · 책을 만들려면 200자 이상 필요해요" : "");
     clearTimeout(draftTimer);
     draftTimer = setTimeout(function () { sset(localStorage, DRAFT_KEY, v); }, 500);
   }
   $("transcript").addEventListener("input", function () { onTranscriptInput(); });
-
-  $("replace-btn").addEventListener("click", function () {
-    var from = $("replace-from").value;
-    var to = $("replace-to").value;
-    var box = $("transcript");
-    if (!from) {
-      $("replace-result").textContent = "바꿀 말을 먼저 적어 주세요.";
-      return;
-    }
-    var count = box.value.split(from).length - 1;
-    if (!count) {
-      $("replace-result").textContent = "‘" + from + "’을(를) 찾지 못했어요.";
-      return;
-    }
-    box.value = box.value.split(from).join(to);
-    onTranscriptInput();
-    $("replace-result").textContent = "‘" + from + "’ " + count + "곳을 ‘" + to + "’(으)로 바꿨어요.";
-    $("replace-from").value = "";
-    $("replace-to").value = "";
-  });
 
   // ---------- Step 3 → generation ----------
 
@@ -640,7 +628,6 @@
       voice: document.querySelector('input[name="voice"]:checked').value,
       terms: $("hint").value.trim(),
       chapters: parseInt($("chapters").value, 10),
-      notes: $("notes").value.trim(),
     };
   }
 
@@ -653,9 +640,7 @@
     if (!job) return;
     var copy = Object.assign({}, job);
     delete copy.steps;
-    if (!sset(localStorage, JOB_KEY, JSON.stringify(copy))) {
-      // Storage full: keep going without the safety copy.
-    }
+    sset(localStorage, JOB_KEY, JSON.stringify(copy)); // if storage is full, carry on without the safety copy
   }
   function dropJob() {
     job = null;
@@ -736,40 +721,33 @@
     }
   }
 
+  var written = function () { return job.chapters.filter(Boolean).length; };
+
   function updateOverall(status) {
     // The outline is a fixed 20% of the bar and the chapters share the rest, so the bar never
     // goes backwards when the outline turns out to have more chapters than guessed.
-    var total = 1 + (job.outline ? job.outline.chapters.length : 3);
-    var done = (job.outline ? 1 : 0) + job.chapters.filter(Boolean).length;
-    var pct;
-    if (!job.outline) {
-      pct = Math.round(20 * Math.min(0.9, job.runStarted ? (Date.now() - job.runStarted) / 120000 : 0));
-    } else {
-      var n = job.outline.chapters.length;
-      pct = Math.round(20 + (80 * job.chapters.filter(Boolean).length) / Math.max(1, n));
-    }
+    var pct = job.outline
+      ? Math.round(20 + (80 * written()) / Math.max(1, job.outline.chapters.length))
+      : Math.round(20 * Math.min(0.9, job.runStarted ? (Date.now() - job.runStarted) / 120000 : 0));
     $("overall-bar").style.width = pct + "%";
     $("overall-bar").parentNode.setAttribute("aria-valuenow", String(pct));
     if (status) $("overall-status").textContent = status;
+    var remaining = job.outline ? job.outline.chapters.length - written() : 0;
     var eta = "";
-    if (job.outline && done < total) {
-      var left = job.chapters.filter(Boolean).length < job.outline.chapters.length ? estimateLeft() : 0;
-      if (left > 0) {
-        // Never let the estimate go up: a growing countdown worries people more than a vague one.
-        job.lastEta = job.lastEta ? Math.min(job.lastEta, left) : left;
-        var remaining = job.outline.chapters.length - job.chapters.filter(Boolean).length;
-        eta = job.lastEta <= 1 ? (remaining <= 1 ? " · 거의 다 됐어요" : " · 1분 안팎 남음") : " · 약 " + job.lastEta + "분 남음";
-      }
+    if (remaining > 0) {
+      // Never let the estimate go up: a growing countdown worries people more than a vague one.
+      var left = estimateLeft(remaining);
+      job.lastEta = job.lastEta ? Math.min(job.lastEta, left) : left;
+      eta = job.lastEta <= 1 ? (remaining <= 1 ? " · 거의 다 됐어요" : " · 1분 안팎 남음") : " · 약 " + job.lastEta + "분 남음";
     }
     $("overall-eta").textContent = eta;
   }
 
   // Minutes left for the chapters: measured speed once a chapter is done, else ~2 minutes per round.
-  function estimateLeft() {
-    var remaining = job.outline.chapters.length - job.chapters.filter(Boolean).length;
+  function estimateLeft(remaining) {
     var rounds = Math.ceil(remaining / CHAPTER_CONCURRENCY);
-    var written = job.chapters.filter(Boolean).length - (job.chaptersAtStart || 0);
-    var perRound = written > 0 && job.chaptersStarted ? (Date.now() - job.chaptersStarted) / Math.ceil(written / CHAPTER_CONCURRENCY) : 120000;
+    var doneHere = written() - (job.chaptersAtStart || 0);
+    var perRound = doneHere > 0 && job.chaptersStarted ? (Date.now() - job.chaptersStarted) / Math.ceil(doneHere / CHAPTER_CONCURRENCY) : 120000;
     return Math.max(1, Math.ceil((rounds * perRound) / 60000));
   }
 
@@ -801,7 +779,6 @@
     showError("");
     renderSteps();
     job.runStarted = Date.now();
-    job.doneAtStart = (job.outline ? 1 : 0) + job.chapters.filter(Boolean).length;
     $("make-progress").scrollIntoView({ behavior: "smooth", block: "start" });
     var ticker = setInterval(function () { updateOverall(); }, 5000);
 
@@ -827,7 +804,7 @@
       var todo = [];
       job.outline.chapters.forEach(function (c, i) { if (!job.chapters[i]) todo.push(i); });
       job.chaptersStarted = Date.now();
-      job.chaptersAtStart = job.chapters.filter(Boolean).length;
+      job.chaptersAtStart = written();
       job.lastEta = 0;
       updateOverall("장을 쓰고 있어요");
       var failures = [];
@@ -858,10 +835,10 @@
 
       if (failures.length) {
         job.failed = true;
-        var written = job.chapters.filter(Boolean).length;
+        var kept = written();
         showError(
           failures.map(function (f) { return "제" + (f.i + 1) + "장"; }).join(", ") + "을 쓰지 못했어요. " +
-          (written ? "이미 쓴 " + written + "개 장은 그대로 있어요. " : "") +
+          (kept ? "이미 쓴 " + kept + "개 장은 그대로 있어요. " : "") +
           "‘이어서 쓰기’를 누르면 남은 부분만 다시 씁니다. (" + failures[0].message + ")"
         );
         updateOverall("잠시 멈췄어요");
@@ -875,7 +852,6 @@
         await Library.download(book);
         return;
       }
-      if (job.transcript.length < 150000) Library.saveTranscript(book.id, job.transcript);
       sset(localStorage, DRAFT_KEY, "");
       updateOverall("완성! 책을 펼칩니다");
       $("overall-bar").style.width = "100%";
@@ -995,6 +971,7 @@
         $("resume").hidden = true;
         $("transcript").value = draft;
         onTranscriptInput();
+        if (config.writing) findFixes();
         $("step2-title").scrollIntoView({ behavior: "smooth", block: "start" });
       };
       $("resume-drop").onclick = function () {
@@ -1002,6 +979,22 @@
         sdel(localStorage, DRAFT_KEY);
       };
     }
+  }
+
+  // Sidebar on wide screens: mark the step being worked on.
+  var stepLinks = document.querySelectorAll(".steps-nav a");
+  if (window.IntersectionObserver) {
+    var steps = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        var id = e.target.getAttribute("aria-labelledby");
+        stepLinks.forEach(function (a) {
+          if (a.hash === "#" + id) a.setAttribute("aria-current", "step");
+          else a.removeAttribute("aria-current");
+        });
+      });
+    }, { rootMargin: "-30% 0px -60% 0px" });
+    document.querySelectorAll(".step").forEach(function (s) { steps.observe(s); });
   }
 
   async function init() {
@@ -1024,7 +1017,7 @@
       config = await res.json();
     } catch (e) {
       config = { accessCodeRequired: false, transcription: false, writing: false };
-      showNotice(["지금은 책 만들기 기능에 연결할 수 없어요. 샘플 책은 볼 수 있습니다."]);
+      showNotice(["지금은 책 만들기 기능에 연결할 수 없어요."]);
       console.warn("API not reachable: deploy with server functions (e.g. Vercel).");
     }
     $("access-field").hidden = !config.accessCodeRequired;
@@ -1035,9 +1028,9 @@
     }
     if (!config.writing) {
       problems.push("지금은 책 쓰기 기능을 쓸 수 없어요.");
-      console.warn("Writing disabled: set OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
+      console.warn("Writing disabled: set NOUS_API_KEY, OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
     }
-    if (config.mock) problems.push("시험 모드입니다. 실제 AI 대신 샘플 내용으로 동작합니다.");
+    if (config.mock) console.warn("MOCK_AI is on: transcripts and books are samples, not real AI output.");
     if (problems.length && $("notice").hidden) showNotice(problems);
     $("make-btn").disabled = !config.writing;
   }
