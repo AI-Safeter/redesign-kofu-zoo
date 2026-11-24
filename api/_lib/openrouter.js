@@ -2,11 +2,23 @@
 // and no ANTHROPIC_API_KEY is. Defaults to free models that write Korean well; OpenRouter
 // tries the next model in the list when one is busy or rate-limited.
 
+// Order from real runs: Nemotron answered reliably; ERNIE writes good Korean but often spends
+// its whole budget on hidden reasoning and returns nothing.
 const DEFAULT_MODELS = [
-  "baidu/ernie-5.5-flash-preview:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "baidu/ernie-5.5-flash-preview:free",
   "google/gemma-4-31b-it:free",
 ];
+
+// Models that just failed (looped, empty or broken output) are skipped for a while, so the
+// other chapters of the same book don't each waste a minute on them. Per server instance.
+const recentFailures = new Map();
+const SKIP_MS = 10 * 60 * 1000;
+function healthy(list) {
+  const now = Date.now();
+  const ok = list.filter((m) => !(now - (recentFailures.get(m) || 0) < SKIP_MS));
+  return ok.length ? ok : list;
+}
 
 function models() {
   const list = (process.env.OPENROUTER_MODELS || process.env.OPENROUTER_MODEL || "")
@@ -39,12 +51,13 @@ export function extractJson(text) {
  * JSON. When that happens, the request is tried again without the model that failed.
  */
 export async function callOpenRouter(args) {
-  let list = models();
+  let list = healthy(models());
   for (;;) {
     try {
       return await attempt({ ...args, models: list });
     } catch (err) {
       const rest = list.filter((m) => m !== err.servedBy);
+      if (err.retryOther && err.servedBy) recentFailures.set(err.servedBy, Date.now());
       if (!err.retryOther || !err.servedBy || rest.length === 0 || rest.length === list.length || args.signal?.aborted) throw err;
       console.warn(`OpenRouter: retrying without ${err.servedBy}`);
       list = rest;
@@ -65,7 +78,7 @@ async function attempt({ system, userText, schema, schemaName, onProgress, signa
       models: modelList,
       stream: true,
       max_tokens: 16000,
-      temperature: 0.7,
+      temperature: 0.4,
       // Keep hidden reasoning short: it counts against max_tokens and some free models loop in it.
       reasoning: { effort: "low", exclude: true },
       // Models that support it are held to the schema; the others get it in the prompt.

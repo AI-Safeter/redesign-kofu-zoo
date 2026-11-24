@@ -15,6 +15,7 @@ const PROVIDERS = {
     url: "https://api.groq.com/openai/v1/audio/transcriptions",
     keyEnv: "GROQ_API_KEY",
     model: () => process.env.GROQ_TRANSCRIBE_MODEL || "whisper-large-v3",
+    altModel: () => "whisper-large-v3-turbo",
   },
   openai: {
     name: "OpenAI",
@@ -50,15 +51,32 @@ export async function POST(request) {
 
   const type = request.headers.get("content-type") || "audio/wav";
   const name = url.searchParams.get("name") || "chunk.wav";
-  const hint = (url.searchParams.get("hint") || "").slice(0, 600);
+  // Names and terms the user typed, sent as a bare list. A descriptive prompt sentence made
+  // Whisper skip the start of real recordings, so nothing else is added.
+  const hint = (url.searchParams.get("hint") || "").slice(0, 300).trim();
 
+  const first = await recognize(provider, { audio, type, name, model: provider.model(), prompt: hint });
+  if (first.error) return first.error;
+  let best = first;
+
+  // Whisper sometimes skips speech (one long segment with very little text) or loops.
+  // Try again once without the hint, on the alternative model where there is one.
+  if (suspicious(first.segments)) {
+    const second = await recognize(provider, { audio, type, name, model: provider.altModel?.() || provider.model(), prompt: "" });
+    if (!second.error && score(second) > score(first)) best = second;
+  }
+  return json({ text: buildText(best) });
+}
+
+async function recognize(provider, { audio, type, name, model, prompt }) {
+  const verbose = !/gpt-4o/.test(model); // gpt-4o transcription models only return plain JSON
   const form = new FormData();
   form.append("file", new Blob([audio], { type }), name);
-  form.append("model", provider.model());
+  form.append("model", model);
   form.append("language", "ko");
-  form.append("response_format", "json");
-  // A short Korean prompt with names/places improves spelling of proper nouns.
-  form.append("prompt", `한 사람의 인생 이야기를 듣는 인터뷰 녹음입니다.${hint ? ` 등장하는 이름과 지명: ${hint}` : ""}`);
+  form.append("temperature", "0");
+  form.append("response_format", verbose ? "verbose_json" : "json");
+  if (prompt) form.append("prompt", prompt);
 
   let res;
   try {
@@ -69,7 +87,7 @@ export async function POST(request) {
     });
   } catch (err) {
     console.error(`${provider.name} unreachable`, err);
-    return errorResponse(`음성 인식 서버(${provider.name})에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.`, 502);
+    return { error: errorResponse(`음성 인식 서버(${provider.name})에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.`, 502) };
   }
 
   if (!res.ok) {
@@ -78,20 +96,61 @@ export async function POST(request) {
     if (res.status === 429) {
       // Free-tier rate limit: tell the browser how long to wait before retrying this chunk.
       const retryAfter = Math.min(120, Math.max(3, Math.ceil(Number(res.headers.get("retry-after")) || 20)));
-      return json(
-        {
-          error: `음성 인식 사용량 한도에 걸렸습니다. ${retryAfter}초 뒤 자동으로 다시 시도합니다.`,
-          retryAfter,
-        },
-        429,
-      );
+      return {
+        error: json({ error: `음성 인식 사용량 한도에 걸렸습니다. ${retryAfter}초 뒤 자동으로 다시 시도합니다.`, retryAfter }, 429),
+      };
     }
     const message =
-      res.status === 401
-        ? `${provider.name} API 키가 올바르지 않습니다.`
-        : `음성 인식에 실패했습니다 (${provider.name} ${res.status}).`;
-    return errorResponse(message, 502);
+      res.status === 401 ? `${provider.name} API 키가 올바르지 않습니다.` : `음성 인식에 실패했습니다 (${provider.name} ${res.status}).`;
+    return { error: errorResponse(message, 502) };
   }
   const data = await res.json();
-  return json({ text: String(data.text || "").trim() });
+  return { text: String(data.text || "").trim(), segments: Array.isArray(data.segments) ? data.segments : null };
+}
+
+/** Signs that Whisper skipped or looped: long stretches with almost no text, or repetition. */
+function suspicious(segments) {
+  if (!segments) return false;
+  return segments.some((seg) => {
+    const secs = seg.end - seg.start;
+    const chars = String(seg.text || "").replace(/\s/g, "").length;
+    return (secs >= 8 && chars / secs < 2) || seg.compression_ratio > 2.4;
+  });
+}
+
+/** Higher is better: characters per second of audio, minus a penalty for each bad segment. */
+function score(result) {
+  if (!result.segments || !result.segments.length) return result.text.length;
+  const span = result.segments[result.segments.length - 1].end - result.segments[0].start || 1;
+  const bad = result.segments.filter((s) => suspicious([s])).length;
+  return result.text.replace(/\s/g, "").length / span - bad * 2;
+}
+
+// Phrases Whisper invents over music or silence at the end of a recording.
+const OUTRO = /^(감사합니다|시청해 ?주셔서 감사합니다|구독과 좋아요.*|MBC 뉴스.*)[.!]?$/;
+
+/**
+ * Joins segments into text, starting a new line where the speaker paused for over a second
+ * after finishing a sentence, and dropping invented sign-offs over silence.
+ */
+function buildText(result) {
+  const segs = result.segments;
+  if (!segs || !segs.length) return result.text;
+  const kept = segs.filter((seg, i) => {
+    const t = String(seg.text || "").trim();
+    if (!t) return false;
+    const last = i >= segs.length - 2;
+    return !(last && OUTRO.test(t) && (seg.no_speech_prob > 0.3 || seg.avg_logprob < -0.6));
+  });
+  let out = "";
+  kept.forEach((seg, i) => {
+    const t = String(seg.text).trim();
+    if (i > 0) {
+      const prev = kept[i - 1];
+      const ended = /[.?!。요다죠까]$/.test(String(prev.text).trim());
+      out += ended && seg.start - prev.end > 1 ? "\n" : " ";
+    }
+    out += t;
+  });
+  return out.trim();
 }

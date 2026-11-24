@@ -63,9 +63,9 @@
         <p id="file-info" class="file-info" hidden></p>
 
         <label class="field">
-          <span class="field__label">녹음에 나오는 이름·지명 <em>(선택)</em></span>
-          <input id="hint" type="text" placeholder="예: 이옥분, 김재곤, 서천, 평화시장" maxlength="300">
-          <span class="field__hint">적어 두면 받아쓰기가 이름을 더 정확하게 적습니다.</span>
+          <span class="field__label">녹음에 나오는 이름·지명·용어 <em>(선택)</em></span>
+          <input id="hint" type="text" placeholder="예: 김현정, 연극공간 해, 플레이백 시어터" maxlength="300">
+          <span class="field__hint">적어 두면 받아쓰기와 책 쓰기가 이 철자를 그대로 씁니다.</span>
         </label>
 
         <button id="transcribe-btn" type="button" class="primary" disabled>녹음을 글로 옮기기</button>
@@ -94,6 +94,16 @@
           <textarea id="transcript" rows="12" aria-describedby="transcript-count" placeholder="녹음을 글로 옮기면 여기에 나타납니다. 녹취록이 이미 있으면 붙여넣으세요."></textarea>
           <span class="field__hint" id="transcript-count">0자</span>
         </label>
+
+        <div class="fixes" id="fixes-box">
+          <div class="fixes__head">
+            <p class="fixes__title" id="fixes-title">AI가 찾은, 잘못 들린 것 같은 말</p>
+            <button id="fixes-find" type="button" class="btn">AI로 찾아보기</button>
+          </div>
+          <p class="field__hint" id="fixes-status" role="status">녹음을 글로 옮기면 자동으로 찾아 드려요. 녹취록을 붙여넣었다면 ‘AI로 찾아보기’를 누르세요.</p>
+          <ul id="fixes-list" class="fixes__list" aria-labelledby="fixes-title"></ul>
+          <button id="fixes-apply" type="button" class="primary" hidden>체크한 것 고치기</button>
+        </div>
 
         <div class="replace" role="group" aria-labelledby="replace-title">
           <p class="replace__title" id="replace-title">잘못 들린 말 한꺼번에 고치기</p>
@@ -130,7 +140,7 @@
 
         <div class="field">
           <span class="field__label" id="voice-label">문체</span>
-          <div class="choices" role="radiogroup" aria-labelledby="voice-label">
+          <div class="choices choices--3" role="radiogroup" aria-labelledby="voice-label">
             <label class="choice">
               <input type="radio" name="voice" value="first" checked>
               <span><b>1인칭 회고록</b><small>"나는 서천 바닷가에서 태어났다." 주인공이 직접 들려주는 듯한 글</small></span>
@@ -139,6 +149,10 @@
               <input type="radio" name="voice" value="third">
               <span><b>3인칭 전기</b><small>"그는 서천 바닷가에서 태어났다." 곁에서 기록한 듯한 글</small></span>
             </label>
+            <label class="choice">
+              <input type="radio" name="voice" value="oral">
+              <span><b>구술 정리</b><small>"저는 서천 바닷가에서 났어요." 말한 그대로의 말투를 살린 글. 강연이나 일 이야기에 잘 맞아요</small></span>
+            </label>
           </div>
         </div>
 
@@ -146,6 +160,8 @@
           <label class="field">
             <span class="field__label">장 수</span>
             <select id="chapters">
+              <option value="2">최대 2장</option>
+              <option value="3">최대 3장</option>
               <option value="4">최대 4장</option>
               <option value="5">최대 5장</option>
               <option value="6" selected>최대 6장</option>

@@ -93,7 +93,8 @@
 
   function coverPage(book) {
     var created = refYear(book);
-    var teller = book.subjectName ? "이야기한 사람 · " + book.subjectName : "";
+    var work = book.kind === "work";
+    var teller = book.subjectName ? "이야기한 사람 · " + book.subjectName : book.speakerRole || "";
     var origin = [book.birthYear ? book.birthYear + "년" : "", book.birthplace || book.born || ""].filter(Boolean).join(" ");
     return {
       kind: "cover",
@@ -101,7 +102,7 @@
       node: el("div", { className: "cover" }, [
         el("div", { className: "cover__top" }, [
           book.sample ? el("p", { className: "cover__badge", text: "샘플 · 가상의 인물" }) : null,
-          el("p", { className: "cover__kicker", text: "한 사람의 생애 기록" }),
+          el("p", { className: "cover__kicker", text: work ? "인터뷰 기록" : "한 사람의 생애 기록" }),
         ]),
         el("div", { className: "cover__main" }, [
           txt("h1", "cover__title", book.title, "title"),
@@ -109,8 +110,9 @@
         ]),
         el("div", { className: "cover__bottom" }, [
           teller ? el("p", { className: "cover__teller", text: teller }) : null,
+          book.subjectName && book.speakerRole ? el("p", { className: "cover__origin", text: book.speakerRole }) : null,
           origin ? el("p", { className: "cover__origin", text: origin + " 출생" }) : null,
-          el("p", { className: "cover__imprint", text: "가족이 엮은 책 · " + created }),
+          el("p", { className: "cover__imprint", text: (work ? "엮은 해 · " : "가족이 엮은 책 · ") + created }),
         ]),
       ]),
     };
@@ -169,7 +171,8 @@
   }
 
   function prologuePage(book) {
-    var epigraph = book.epigraph
+    var epigraphOk = book.epigraph && norm(book.epigraph) !== norm(book.title) && norm(book.title).indexOf(norm(book.epigraph)) < 0;
+    var epigraph = epigraphOk
       ? el("figure", { className: "epigraph" }, [
           txt("blockquote", null, book.epigraph, "epigraph"),
           book.subjectName ? el("figcaption", { text: "— " + book.subjectName }) : null,
@@ -221,8 +224,11 @@
       meta.length ? el("p", { className: "chapter__meta", text: meta.join("  ·  ") }) : null,
     ]);
 
+    var exA = c.excerpt && c.excerpt.a ? norm(c.excerpt.a) : "";
+    var excerptRepeats = exA && paras.some(function (p) { return norm(p).indexOf(exA.slice(0, 24)) >= 0; });
+    var excerptComplete = c.excerpt && /[.?!。요다죠까”"]\s*$/.test(c.excerpt.a || "");
     var excerpt =
-      c.excerpt && c.excerpt.a
+      c.excerpt && c.excerpt.a && !excerptRepeats && excerptComplete
         ? el("aside", { className: "excerpt", "aria-label": "인터뷰에서" }, [
             el("p", { className: "excerpt__label", text: "인터뷰에서" }),
             c.excerpt.q ? txt("p", "excerpt__q", c.excerpt.q, "chapters." + i + ".excerpt.q") : null,
@@ -230,13 +236,15 @@
           ])
         : null;
 
+    var unv = c.unverified || [];
+    var uns = c.unsupported || [];
     var check =
-      c.unverified && c.unverified.length
+      unv.length || uns.length
         ? el("div", { className: "verify-note", role: "note" }, [
-            el("p", { text: "녹취록에서 찾지 못한 인용입니다. 실제로 하신 말씀인지 확인해 주세요:" }),
-            el("ul", null, c.unverified.map(function (u) {
-              return el("li", { text: "“" + u + "”" });
-            })),
+            unv.length ? el("p", { text: "녹취록에서 찾지 못한 인용입니다. 실제로 하신 말씀인지 확인해 주세요:" }) : null,
+            unv.length ? el("ul", null, unv.map(function (u) { return el("li", { text: "“" + u + "”" }); })) : null,
+            uns.length ? el("p", { text: "녹취록에 근거가 약한 서술입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }) : null,
+            uns.length ? el("ul", null, uns.map(function (u) { return el("li", { text: u }); })) : null,
           ])
         : null;
 
@@ -252,6 +260,19 @@
       txt("blockquote", null, q.text, "chapters." + i + ".pullQuote.text"),
       q.context ? txt("figcaption", null, q.context, "chapters." + i + ".pullQuote.context") : null,
     ]);
+  }
+
+  function keyTermsPage(book) {
+    var dl = el("dl", { className: "terms" });
+    book.keyTerms.forEach(function (k, i) {
+      dl.appendChild(txt("dt", null, k.term, "keyTerms." + i + ".term"));
+      dl.appendChild(txt("dd", null, k.note, "keyTerms." + i + ".note"));
+    });
+    return {
+      kind: "terms",
+      label: "한눈에 보기",
+      node: el("div", null, [el("h2", { className: "page__heading", text: "한눈에 보기" }), dl]),
+    };
   }
 
   function lastWordsPage(book) {
@@ -323,7 +344,7 @@
       ["녹음", m.audioSeconds ? Math.round(m.audioSeconds / 60) + "분" : ""],
       ["녹취록", m.transcriptChars ? m.transcriptChars.toLocaleString("ko-KR") + "자" : ""],
       ["만든 날", book.createdAt && !m.origin ? new Date(book.createdAt).toLocaleDateString("ko-KR") : ""],
-      ["글쓴 AI", (m.models || []).join(", ")],
+      ["글쓴 AI", (m.models || []).map(modelName).join(", ")],
     ].filter(function (r) { return r[1]; });
 
     var dl = el("dl", { className: "colophon__facts" });
@@ -336,8 +357,8 @@
       txt("p", "colophon__title", book.title, null),
       dl,
       // How the book was made: the sample says so itself; generated books get the standard line.
-      el("p", { text: m.origin || "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 썼습니다. 인용은 녹취록과 대조했습니다." }),
-      el("p", { text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." }),
+      el("p", { text: m.origin || "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 썼습니다. 인용은 녹취록과 대조했지만, 받아쓰기 오류가 남아 있을 수 있습니다." }),
+      (book.timeline || []).some(function (t) { return t.approx; }) ? el("p", { text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." }) : null,
     ]);
     colophon.firstChild.removeAttribute("data-path");
 
@@ -346,6 +367,17 @@
       label: "에필로그",
       node: el("div", null, [el("h2", { className: "page__heading", text: "에필로그" }), prose(book.epilogue, "epilogue"), colophon]),
     };
+  }
+
+  // "nvidia/nemotron-3-ultra-550b-a55b:free" → "Nemotron 3 Ultra (무료)"
+  function modelName(id) {
+    var known = { claude: "Claude", nemotron: "NVIDIA Nemotron", ernie: "Baidu ERNIE", gemma: "Google Gemma", mock: "시험 모드" };
+    var base = String(id).split("/").pop();
+    var free = /:free$/.test(base);
+    base = base.replace(/:free$/, "");
+    var key = Object.keys(known).filter(function (k) { return base.indexOf(k) === 0; })[0];
+    var name = key ? known[key] : base;
+    return name + (free ? " (무료 모델)" : "");
   }
 
   function buildPages(book) {
@@ -362,8 +394,10 @@
     book.chapters.forEach(function (c, i) {
       push({ kind: "chapter", toc: true, chapter: i, label: c.title, years: yearsOf(c) });
     });
+    if (book.keyTerms && book.keyTerms.length) push({ kind: "terms", toc: true, label: "한눈에 보기" });
     if (book.lastWords && book.lastWords.length) push({ kind: "lastwords", toc: true, label: "남기고 싶은 말" });
-    if (book.timeline && book.timeline.length) push({ kind: "timeline", toc: true, label: "연보" });
+    var dated = (book.timeline || []).some(function (t) { return t.year || t.when; });
+    if (dated) push({ kind: "timeline", toc: true, label: "연보" });
     push({ kind: "epilogue", toc: true, label: "에필로그" });
 
     return layout.map(function (e) {
@@ -373,6 +407,7 @@
         case "people": return peoplePage(book);
         case "prologue": return prologuePage(book);
         case "chapter": return chapterPage(book, book.chapters[e.chapter], e.chapter);
+        case "terms": return keyTermsPage(book);
         case "lastwords": return lastWordsPage(book);
         case "timeline": return timelinePage(book, layout);
         default: return epiloguePage(book);
@@ -606,6 +641,7 @@
       var path = e.target.getAttribute && e.target.getAttribute("data-path");
       if (!path) return;
       setPath(book, path, e.target.textContent.trim());
+      if (path === "title") top.querySelector(".reader__title").textContent = book.title;
       clearTimeout(saveTimer);
       saveTimer = setTimeout(function () { options.onChange(book); }, 400);
     });

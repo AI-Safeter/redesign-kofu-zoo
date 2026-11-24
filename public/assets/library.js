@@ -79,6 +79,20 @@
     });
   }
 
+  // The whole book as plain HTML, shown when scripts don't run (e.g. some mail or messenger previews).
+  function plainHtml(book) {
+    var h = function (tag, text) { return text ? "<" + tag + ">" + esc(text) + "</" + tag + ">" : ""; };
+    var paras = function (list) { return (list || []).map(function (p) { return h("p", p); }).join(""); };
+    var out = h("h1", book.title) + h("p", book.subtitle) + h("p", book.subjectName);
+    if (book.prologue && book.prologue.length) out += h("h2", "책을 펴내며") + paras(book.prologue);
+    (book.chapters || []).forEach(function (c, i) {
+      out += h("h2", "제" + (i + 1) + "장 " + c.title) + paras(c.paragraphs);
+    });
+    if (book.lastWords && book.lastWords.length) out += h("h2", "남기고 싶은 말") + paras(book.lastWords);
+    if (book.epilogue && book.epilogue.length) out += h("h2", "에필로그") + paras(book.epilogue);
+    return out;
+  }
+
   async function standaloneHtml(book) {
     var res = await Promise.all([fetch("/assets/book.css"), fetch("/assets/book-render.js")]);
     if (!res[0].ok || !res[1].ok) throw new Error("파일을 불러오지 못했습니다.");
@@ -93,6 +107,9 @@
       '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">\n' +
       "<style>\n" + css.replace(/<\/style/gi, "<\\/style") + "\n</style>\n</head>\n<body>\n" +
       '<div id="book"></div>\n' +
+      '<noscript><div style="max-width:40em;margin:0 auto;padding:24px 16px;font-family:serif;line-height:1.8">' +
+      "<p><b>이 미리보기에서는 책 넘기기 기능이 동작하지 않아요. 파일을 내려받아 브라우저로 열면 책처럼 볼 수 있어요.</b></p>" +
+      plainHtml(book) + "</div></noscript>\n" +
       '<script id="book-data" type="application/json">' + data + "</script>\n" +
       "<script>\n" + js.replace(/<\/script/gi, "<\\/script") + "\n" +
       'ChronicleBook.mount(document.getElementById("book"), JSON.parse(document.getElementById("book-data").textContent));\n' +

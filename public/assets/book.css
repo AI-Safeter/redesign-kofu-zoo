@@ -252,7 +252,8 @@ body { min-height: 100vh; min-height: 100dvh; }
 /* Cover: a framed title page */
 .page--cover .page__inner { padding: clamp(14px, 3vw, 22px); }
 .cover {
-  min-height: min(82vh, 880px);
+  min-height: min(calc(100vh - 190px), 880px);
+  min-height: min(calc(100dvh - 190px), 880px);
   border: 1px solid var(--accent);
   outline: 1px solid var(--accent);
   outline-offset: -7px;
@@ -412,6 +413,12 @@ body { min-height: 100vh; min-height: 100dvh; }
 .verify-note p { margin: 0 0 6px; }
 .verify-note ul { margin: 0; padding-left: 1.2em; }
 
+/* 한눈에 보기: key ideas of a work interview */
+.terms { margin: 0; display: grid; gap: 0; }
+.terms dt { font-weight: 700; font-size: var(--text-size); padding-top: 14px; border-top: 1px solid var(--rule); word-break: keep-all; }
+.terms dt:first-child { border-top: 0; padding-top: 0; }
+.terms dd { margin: 4px 0 14px; color: var(--ink-soft); font-size: calc(var(--text-size) * 0.95); line-height: 1.7; word-break: keep-all; }
+
 /* 남기고 싶은 말: a letter */
 .letter {
   padding: clamp(22px, 5vw, 40px);
@@ -490,6 +497,7 @@ body { min-height: 100vh; min-height: 100dvh; }
   .page { border-radius: 0; box-shadow: none; }
   .page__inner { padding-left: 22px; padding-right: 22px; }
   .reader__nav .btn { min-width: 76px; padding: 0 12px; }
+  .prose p { text-align: start; }
   .toc__link { grid-template-columns: 3.2em 1fr auto; }
   .people li { grid-template-columns: 1fr; gap: 2px; }
   .timeline__list li { grid-template-columns: 1fr; gap: 0; }
@@ -500,13 +508,16 @@ body { min-height: 100vh; min-height: 100dvh; }
 @media print {
   @page { size: A5; margin: 18mm 15mm 20mm; @bottom-center { content: counter(page); font: 9pt "Noto Serif KR", serif; color: #555; } }
   @page :first { @bottom-center { content: none; } }
-  :root { --paper: #fff; --page: #fff; --ink: #000; --ink-soft: #333; --muted: #555; --rule: #ccc; --accent: #2c4a78; --accent-soft: #eef1f6; --text-size: 10.5pt; --leading: 1.8; }
+  :root, :root[data-theme], :root:not([data-theme="light"]) {
+    --paper: #fff; --page: #fff; --ink: #000; --ink-soft: #333; --muted: #555; --rule: #ccc; --accent: #2c4a78; --accent-soft: #eef1f6;
+    --text-size: 10.5pt; --leading: 1.8; color-scheme: light;
+  }
   .reader__top, .reader__nav, .reader__progress, .reader__editnote, .reader__panel, .verify-note { display: none !important; }
   .reader__stage { display: block; padding: 0; }
   .page { display: block !important; box-shadow: none; max-width: none; animation: none !important; break-after: page; }
   .page:last-child { break-after: auto; }
   .page__inner { padding: 0 !important; }
-  .page--chapter .page__inner { padding-top: 18mm !important; }
+  .page--chapter .page__inner { padding-top: 6mm !important; }
   .page__folio, .toc__page { display: none; }
   .page__heading { margin-bottom: 0.8em; }
   .toc__link { padding: 5px 2px; min-height: 0; }
@@ -514,5 +525,6 @@ body { min-height: 100vh; min-height: 100dvh; }
   .cover { min-height: 170mm; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .excerpt, .letter { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .chapter__head, .page__heading { break-after: avoid; }
-  .pullquote, .excerpt, .timeline__list li, .epigraph, .people li { break-inside: avoid; }
+  .pullquote, .timeline__list li, .epigraph, .people li, .terms dd { break-inside: avoid; }
+  .prose p { text-align: justify; }
 }

@@ -10,7 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { callOpenRouter } from "./openrouter.js";
-import { indexTranscript, isFromTranscript, quotedSpans, similarity } from "./verify.js";
+import { indexTranscript, isFromTranscript, quotedSpans, similarity, support } from "./verify.js";
 
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 const EFFORT = process.env.CLAUDE_EFFORT || "high";
@@ -48,9 +48,11 @@ export function readSettings(body) {
       interviewDate: clip(s.interviewDate, 40),
       interviewer: clip(s.interviewer, 60),
       interviewPlace: clip(s.interviewPlace, 60),
-      voice: s.voice === "third" ? "third" : "first",
+      voice: ["first", "third", "oral"].includes(s.voice) ? s.voice : "first",
+      // Spellings of names and terms in the recording (the same hint the transcription uses).
+      terms: clip(s.terms, 300),
       // The most chapters to write; the outline may use fewer when the interview is short.
-      chapters: Math.min(8, Math.max(3, parseInt(s.chapters, 10) || 6)),
+      chapters: Math.min(8, Math.max(1, parseInt(s.chapters, 10) || 6)),
       notes: clip(s.notes, 1000),
     },
   };
@@ -63,13 +65,14 @@ const clip = (v, n) => String(v || "").trim().slice(0, n);
  * so a short interview becomes a short book instead of a padded one.
  */
 export function chapterLimit(settings, transcript) {
-  return Math.min(settings.chapters, Math.max(3, Math.floor(transcript.length / 1500)));
+  return Math.min(settings.chapters, Math.max(1, Math.round(transcript.length / 1500)));
 }
 
 /** Target length per chapter, scaled to how much the interview actually contains. */
 function chapterLength(transcript, chapters) {
-  const raw = (transcript.length * 1.3) / chapters;
-  return Math.round(Math.min(2500, Math.max(500, raw)) / 100) * 100;
+  // The whole book's chapters together come to about 80% of the transcript's length.
+  const raw = (transcript.length * 0.8) / chapters;
+  return Math.round(Math.min(2500, Math.max(400, raw)) / 100) * 100;
 }
 
 // ---------- Prompts ----------
@@ -77,15 +80,18 @@ function chapterLength(transcript, chapters) {
 const FAITHFULNESS_CHECKLIST = `Before you answer, check:
 1. Inside quotation marks there are only words that are actually in the transcript (lightly cleaned of fillers). Do not invent dialogue for anyone — not the interviewee, and not their spouse, children, colleagues or grandchildren. For example, a line like 「사장님, 우리도 반만 받을게요」 is invented unless the transcript contains it.
 2. No added weather, seasons, gestures, emotions, scenes or conversations that the interview does not mention.
-3. Shorter and true is better than longer and made up. If the material runs out, stop.`;
+3. Never invent when or how the speaker came to something (no "~하던 시절", "깨달았다", "꿈꿨다", "다짐했다", "마주 앉아") unless they said so.
+4. Mostly your own narration: quotations are at most about a third of the text, never two quotations back to back. Never quote a phrase that does not make sense (a likely mishearing); fix it if the context makes the word clear, otherwise paraphrase.
+5. Shorter and true is better than longer and made up. If the material runs out, stop.`;
 
 function systemPrompt(settings) {
-  const voice =
-    settings.voice === "first"
-      ? `1인칭 회고록. 주인공이 직접 자기 삶을 돌아보며 쓰는 글처럼 '나는'으로 서술하세요. 문장은 평서체(~했다, ~였다)로, 주인공의 성품이 배어나도록 쓰세요.`
-      : `3인칭 전기. 작가가 주인공의 삶을 따뜻한 시선으로 기록하는 글입니다. 주인공은 이름(또는 자연스러운 호칭)으로 부르고, 평서체(~했다, ~였다)로 쓰세요.`;
+  const voice = {
+    first: `1인칭 회고록. 주인공이 직접 쓰는 글처럼 1인칭으로 서술하세요(주인공이 '저희/우리'로 말했다면 '우리'). 문장은 평서체(~했다, ~였다; 지금의 일은 ~한다)로, 주인공의 성품이 배어나도록 쓰세요. 화자가 자기 말을 따옴표로 인용하며 "~라고 말했다"고 쓰지 마세요.`,
+    third: `3인칭 전기. 작가가 주인공의 삶을 따뜻한 시선으로 기록하는 글입니다. 주인공은 이름(또는 자연스러운 호칭)으로 부르고, 평서체(~했다, ~였다)로 쓰세요.`,
+    oral: `구술 정리. 화자가 말한 그대로의 말투(~합니다, ~해요, ~했지요)를 살려, 군더더기와 반복만 덜어 낸 1인칭 글로 정리하세요. 화자가 '저희'라고 말했다면 '저희'로 둡니다. 화자의 말을 새로 꾸미거나 문학적으로 바꾸지 마세요.`,
+  }[settings.voice];
 
-  return `You are an experienced Korean memoir writer (자서전 작가). You turn a recorded oral-history interview into a short e-book that chronicles one person's life, in time order.
+  return `You are an experienced Korean memoir writer (자서전 작가). You turn a recorded interview into a short e-book about one person: a chronicle of their life in time order when the interview is a life story, or a faithful record of their work and ideas when the interview is mainly about that.
 
 # Ground rules
 - Use only what the interview supports. Never invent people, names, dates, places, events, dialogue or feelings. If the interviewee is unsure of a year, say so ("1960년대 중반 무렵"). If something is missing, leave it out rather than fill the gap.
@@ -99,19 +105,24 @@ function systemPrompt(settings) {
 - Voice: ${voice}
 - Be concrete: use the specific places, objects, foods and small scenes the interviewee mentions. Restraint moves readers more than big words; avoid clichés, over-dramatization, moralizing and repetition.
 - Respect the person. Handle hardship, loss and family conflict with dignity, as the interviewee framed them.
+- Keep the speaker's point of view: what they said about a team ("저희") stays about the team; advice they gave to others stays advice to others; present-tense statements about their work stay present tense.
 
 # This book
 - Main character: ${settings.subjectName || "(not given — take the name from the interview if mentioned)"}
 - Interviewer: ${settings.interviewer || "(not given)"}
 - Interview date: ${settings.interviewDate || "(not given)"}
+${settings.terms ? `- Correct spellings of names and terms in this recording (use exactly these): ${settings.terms}` : ""}
 ${settings.notes ? `- Notes from the person making the book: ${settings.notes}` : ""}`.trim();
 }
 
 const transcriptBlock = (transcript) => `<transcript>\n${transcript}\n</transcript>`;
 
 function outlineRequest(settings, transcript) {
-  return `Plan the e-book from the interview above. Gather the evidence first, then write the short framing texts.
+  return `Plan the e-book from the interview above. First decide what kind of interview it is, then gather the evidence, then write the short framing texts.
 
+- kind: "life" if the interview is mainly the story of the person's life (childhood, work, family, events over the years); "work" if it is mainly about their work, ideas, a project or a craft rather than events of their life; "mixed" if it is substantially both.
+- speakerRole: who the speaker is, in a few words, from the interview (e.g. "참여형 연극 프로그램 진행자", "은퇴한 선반공").
+- speaksAs: "우리" if the speaker mostly speaks for a team or group ("저희"), else "나".
 - title: a short, evocative Korean book title drawn from the person's own words or life (not generic like "나의 인생").
 - subtitle: one line, e.g. "○○○ 이야기".
 - subjectName: the main character's name ("" if never mentioned and not given).
@@ -119,7 +130,7 @@ function outlineRequest(settings, transcript) {
 - birthplace: e.g. "경상북도 안동" ("" if unknown).
 - epigraph: one memorable sentence the interviewee actually said (verbatim).
 - people: the individual people the interview mentions who matter in the story — family, friends, mentors. Not the main character, not the interviewer, and not groups (직원들, 거래처, 동무들). name ("" if unnamed), relation to the main character (e.g. "아내", "삼촌", "군대 동기"), note: one short phrase from the interview. Do not add people who are not mentioned.
-- chapters: AT MOST ${chapterLimit(settings, transcript)}, in chronological order, together covering the whole life story in the interview. Use fewer chapters when the material is thin: each chapter needs at least two distinct episodes. Periods must not overlap. For each:
+- chapters: AT MOST ${chapterLimit(settings, transcript)}, together covering everything substantial in the interview. Use fewer chapters when the material is thin: each chapter needs at least two distinct episodes or points. For kind "life" (and the life parts of "mixed"): chronological, periods must not overlap. For kind "work": themes in the order the speaker raised them, with no invented chronology (yearFrom/yearTo/place stay "" unless the speaker gave them). For each:
   - title: a chapter title (no "제1장" prefix).
   - yearFrom / yearTo: four-digit years ("" if unknown; yearTo may be "현재").
   - place: where this part of life happened, as named in the interview (e.g. "대구 칠성동").
@@ -127,10 +138,11 @@ function outlineRequest(settings, transcript) {
   - events: every episode that belongs to this chapter, one short line each. Assign each episode to exactly one chapter.
   - quotes: the interviewee's best verbatim lines for this chapter. Each quote is used in exactly one chapter.
   - notes: a brief for the chapter writer — details, people, places and dates from the transcript that belong here.
-- timeline: 8–16 key events in order. year: the four-digit year (or "" if unknown); approx: true when the year is estimated (e.g. computed from an age) rather than stated; chapter: the number of the chapter it belongs to (1-based); event: a short phrase.
-- lastWords: the interviewee's message to family or to future generations, verbatim from the transcript, split into short paragraphs. Empty list if there is none. These words will appear on their own page, so do not plan to use them elsewhere.
+- timeline: key events with a year or age the speaker actually stated, in order (at most 16). Use [] if there are none, which is normal for kind "work". year: the four-digit year (or "" if unknown); approx: true when the year is estimated (e.g. computed from an age) rather than stated; chapter: the number of the chapter it belongs to (1-based); event: a short phrase.
+- keyTerms: for kind "work" or "mixed", 3–8 key ideas, methods, names or numbers the speaker explained (term: as they named it, correctly spelled; note: one short line from the interview). [] for kind "life".
+- lastWords: the interviewee's message to family, to future generations, or to people who will do the same work, verbatim from the transcript, split into short paragraphs. Empty list if there is none. These words will appear on their own page, so do not plan to use them elsewhere.
 - prologue ("책을 펴내며"): 1–2 short paragraphs, in the third person, about the occasion: who this person is in one line, who sat down with them and when, why this book exists. Do not list years or events; the chapters do that.
-- epilogue: one paragraph of reflection on what this life shows. No new events and no repeating the lastWords.
+- epilogue: one paragraph of reflection on what this life or work shows. No new events and no repeating the lastWords.
 
 ${FAITHFULNESS_CHECKLIST}`;
 }
@@ -154,7 +166,8 @@ ${plan}
 
 Now write chapter ${index + 1}: "${ch.title}" (${[ch.yearFrom, ch.yearTo].filter(Boolean).join("–") || "연도 미상"}${ch.place ? `, ${ch.place}` : ""}).
 
-Episodes for this chapter (cover these, in time order, and nothing from other chapters):
+${outline.kind === "work" ? "This interview is about the speaker's work and ideas, not a life chronology: write the points in the order the speaker raised them, keep their present tense, and do not turn them into a biography." : ""}
+Episodes or points for this chapter (cover these, in order, and nothing from other chapters):
 ${ch.events.map((e) => `- ${e}`).join("\n") || "- (see brief)"}
 
 Quotes reserved for this chapter:
@@ -168,9 +181,9 @@ ${usedElsewhere.map((q) => `- ${q}`).join("\n") || "- (none)"}
 
 Write the chapter from the interview above, using the transcript as your source of truth.
 
-- paragraphs: 3–8 paragraphs, about ${length} Korean characters in total. Use every episode and detail listed above so the chapter is full, but stop when the material runs out. Never say the same thing twice. Each array element is one paragraph. Weave in one or two of the reserved quotes where they fit.
-- pullQuote: the single most striking thing the interviewee said about this period, verbatim, with a short "context" phrase (e.g. "서울로 떠나던 날을 떠올리며").
-- excerpt: one real exchange from the transcript about this period — q: the interviewer's question, a: the interviewee's answer — verbatim with dialect, at most 200 characters in total, and different from the pullQuote. Use empty strings if there is none.
+- paragraphs: 3–8 paragraphs, about ${length} Korean characters in total. Use every episode and detail listed above so the chapter is full, but stop when the material runs out. Never say the same thing twice. Each array element is one paragraph. Tell it mostly in your own narration and weave in one or two of the reserved quotes where they fit.
+- pullQuote: the single most striking thing the interviewee said in this chapter's material, verbatim, with a short "context" phrase (e.g. "서울로 떠나던 날을 떠올리며").
+- excerpt: one real exchange from the transcript for this chapter — q: the interviewer's question, a: the interviewee's answer — verbatim with dialect, at most 200 characters in total, and different from the pullQuote. Use empty strings if there is none.
 
 ${FAITHFULNESS_CHECKLIST}`;
 }
@@ -187,6 +200,9 @@ const obj = (properties) => ({
 });
 
 export const OUTLINE_SCHEMA = obj({
+  kind: { type: "string", enum: ["life", "work", "mixed"] },
+  speakerRole: str,
+  speaksAs: { type: "string", enum: ["나", "우리"] },
   title: str,
   subtitle: str,
   subjectName: str,
@@ -199,6 +215,7 @@ export const OUTLINE_SCHEMA = obj({
     items: obj({ title: str, yearFrom: str, yearTo: str, place: str, summary: str, events: strArray, quotes: strArray, notes: str }),
   },
   timeline: { type: "array", items: obj({ year: str, approx: { type: "boolean" }, chapter: { type: "integer" }, event: str }) },
+  keyTerms: { type: "array", items: obj({ term: str, note: str }) },
   lastWords: strArray,
   prologue: strArray,
   epilogue: strArray,
@@ -291,27 +308,88 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
   return { outline, model };
 }
 
-export async function writeChapter({ settings, transcript, outline, index, onProgress, signal }) {
+export async function writeChapter({ settings, transcript, outline, index: chapterIndex, onProgress, signal }) {
   outline = normalizeOutline(outline, null, 8, settings); // the browser sends it back; never trust its shape
-  if (!outline.chapters[index]) throw fail("잘못된 장 번호입니다.", 400);
-  const { data, model } = await callModel({
+  if (!outline.chapters[chapterIndex]) throw fail("잘못된 장 번호입니다.", 400);
+  const transcriptIndex = indexTranscript(transcript);
+  let { data, model } = await callModel({
     settings,
     transcript,
-    userText: chapterRequest(outline, index, transcript),
+    userText: chapterRequest(outline, chapterIndex, transcript),
     schema: CHAPTER_SCHEMA,
     schemaName: "book_chapter",
     onProgress,
     signal,
   });
-  const chapter = normalizeChapter(data, indexTranscript(transcript), outline.chapters[index]);
+  let chapter = normalizeChapter(data, transcriptIndex, outline.chapters[chapterIndex], outline);
+
+  // A chapter that is mostly pasted quotations is not writing: ask once more, with feedback.
+  if (chapter.quotedShare > 0.45 && !signal?.aborted) {
+    const retry = await callModel({
+      settings,
+      transcript,
+      userText:
+        chapterRequest(outline, chapterIndex, transcript) +
+        `\n\nYour previous draft was ${Math.round(chapter.quotedShare * 100)}% quotations. Rewrite it mostly in your own narration, with at most two short quotations.`,
+      schema: CHAPTER_SCHEMA,
+      schemaName: "book_chapter",
+      onProgress,
+      signal,
+    }).catch(() => null);
+    if (retry) {
+      const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline);
+      if (again.paragraphs.length && again.quotedShare < chapter.quotedShare) {
+        chapter = again;
+        model = retry.model;
+      }
+    }
+  }
+  delete chapter.quotedShare;
   if (chapter.paragraphs.length === 0) throw fail("이 장의 본문을 받지 못했습니다. 다시 시도해 주세요.");
   return { chapter, model };
+}
+
+// ---------- Proofreading the transcript ----------
+
+export const FIXES_SCHEMA = obj({
+  fixes: { type: "array", items: obj({ heard: str, meant: str, why: str }) },
+});
+
+/**
+ * Asks the model for likely speech-recognition errors in the transcript, for the user to
+ * accept or reject before the book is written. Only suggestions whose "heard" text really
+ * occurs in the transcript are returned.
+ */
+export async function findFixes({ settings, transcript, onProgress, signal }) {
+  const { data, model } = await callModel({
+    settings,
+    transcript,
+    userText: `Proofread the transcript above for speech-recognition errors only.
+
+List words or short phrases that were almost certainly misheard, where the context makes the intended words clear: nonsense words, wrong homophones, wrong numbers that contradict the rest of the interview, misspelled names and terms${settings.terms ? ` (the correct spellings include: ${settings.terms})` : ""}.
+- heard: the exact text as it appears in the transcript (copy it character for character, 2–20 characters, enough to be unambiguous).
+- meant: the corrected text.
+- why: a few words of evidence (e.g. "뒤에서 '10회기'라고 함", "플레이백 시어터는 연극 형식 이름").
+Do not change dialect, grammar, style or fillers, and do not guess where the context is not clear. At most 30 items; [] if there are none.`,
+    schema: FIXES_SCHEMA,
+    schemaName: "transcript_fixes",
+    onProgress,
+    signal,
+  });
+  const seen = new Set();
+  const fixes = list(data?.fixes)
+    .map((f) => ({ heard: text(f?.heard), meant: text(f?.meant), why: text(f?.why) }))
+    .filter((f) => f.heard && f.meant && f.heard !== f.meant && f.heard.length <= 40 && transcript.includes(f.heard))
+    .filter((f) => !seen.has(f.heard) && seen.add(f.heard))
+    .slice(0, 30);
+  return { fixes, model };
 }
 
 // ---------- Output clean-up and checks ----------
 // Claude's structured outputs always match the schema; free models through OpenRouter
 // sometimes return a string where a list belongs, or leave a field out.
 
+const norm_ = (s) => String(s || "").replace(/[^가-힣a-zA-Z0-9]/g, "");
 const text = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
 const list = (v) => (Array.isArray(v) ? v : []);
 const year = (v) => {
@@ -349,13 +427,35 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
     }));
 
   const lastWords = verified(paragraphs(d.lastWords), index);
+  const title = text(d.title) || "나의 이야기";
   let epigraph = text(d.epigraph);
-  if (index && epigraph && !isFromTranscript(epigraph, index)) {
-    epigraph = chapters.flatMap((c) => c.quotes)[0] || "";
+  const sameAsTitle = (q) => similarity(q, title) > 0.8;
+  if ((index && epigraph && !isFromTranscript(epigraph, index)) || (epigraph && sameAsTitle(epigraph))) {
+    epigraph = chapters.flatMap((c) => c.quotes).find((q) => !sameAsTitle(q)) || "";
   }
+  const kind = ["life", "work", "mixed"].includes(d.kind) ? d.kind : "life";
+
+  const timeline = list(d.timeline)
+    .filter((t) => t && typeof t === "object" && text(t.event))
+    .map((t) => {
+      const ch = parseInt(t.chapter, 10);
+      return {
+        year: year(t.year ?? t.when),
+        approx: t.approx === true || /무렵|쯤|경/.test(text(t.year ?? t.when)),
+        chapter: ch >= 1 && ch <= chapters.length ? ch : 0,
+        event: text(t.event),
+      };
+    })
+    // In chapter order, then by year within a chapter (undated events go last in their chapter).
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => (a.t.chapter || 99) - (b.t.chapter || 99) || (Number(a.t.year) || 9999) - (Number(b.t.year) || 9999) || a.i - b.i)
+    .map(({ t }) => t);
 
   return {
-    title: text(d.title) || "나의 이야기",
+    kind,
+    speakerRole: text(d.speakerRole),
+    speaksAs: d.speaksAs === "우리" ? "우리" : "나",
+    title,
     subtitle: text(d.subtitle),
     subjectName: text(d.subjectName),
     birthYear: year(d.birthYear),
@@ -374,28 +474,19 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
         return true;
       }),
     chapters,
-    timeline: list(d.timeline)
-      .filter((t) => t && typeof t === "object" && text(t.event))
-      .map((t) => {
-        const ch = parseInt(t.chapter, 10);
-        return {
-          year: year(t.year ?? t.when),
-          approx: t.approx === true || /무렵|쯤|경/.test(text(t.year ?? t.when)),
-          chapter: ch >= 1 && ch <= chapters.length ? ch : 0,
-          event: text(t.event),
-        };
-      })
-      // In chapter order, then by year within a chapter (undated events go last in their chapter).
-      .map((t, i) => ({ t, i }))
-      .sort((a, b) => (a.t.chapter || 99) - (b.t.chapter || 99) || (Number(a.t.year) || 9999) - (Number(b.t.year) || 9999) || a.i - b.i)
-      .map(({ t }) => t),
+    // A timeline with no dated entries is just a second table of contents: leave it out.
+    timeline: timeline.some((t) => t.year) ? timeline : [],
+    keyTerms: list(d.keyTerms)
+      .filter((k) => k && typeof k === "object" && text(k.term))
+      .map((k) => ({ term: text(k.term), note: text(k.note) }))
+      .slice(0, 8),
     lastWords,
     prologue: paragraphs(d.prologue),
     epilogue: paragraphs(d.epilogue),
   };
 }
 
-function normalizeChapter(d, index, plan) {
+function normalizeChapter(d, index, plan, outline = {}) {
   d = d && typeof d === "object" ? d : {};
 
   // Drop paragraphs that mostly repeat an earlier one, and sentences said twice
@@ -419,6 +510,20 @@ function normalizeChapter(d, index, plan) {
   // Quotations that could not be found in the transcript are listed for the family to check.
   const unverified = kept.flatMap(quotedSpans).filter((q) => !isFromTranscript(q, index));
 
+  // Narration that tells a story the speaker never told ("깨달았다", "그 시절") and has little
+  // support in the transcript is listed too.
+  const RISKY = /시절|깨달|꿈꿨|꿈을 꾸|다짐|증명|마주 앉|눈시울|미소|가슴이 벅|눈물/;
+  const unsupported = [];
+  for (const p of kept) {
+    const narration = p.replace(/[“"「『][^”"」』]*[”"」』]/g, " ");
+    for (const s of narration.match(/[^.!?。]+[.!?。]?/g) || []) {
+      if (RISKY.test(s) && norm_(s).length >= 8 && support(s, index) < 0.35) unsupported.push(s.trim());
+    }
+  }
+
+  const all = kept.join("");
+  const quotedShare = all ? kept.flatMap(quotedSpans).join("").length / all.length : 0;
+
   const q = d.pullQuote && typeof d.pullQuote === "object" ? d.pullQuote : { text: d.pullQuote };
   let pullQuote = { text: text(q.text), context: text(q.context) };
   if (!isFromTranscript(pullQuote.text, index)) {
@@ -427,12 +532,18 @@ function normalizeChapter(d, index, plan) {
 
   const ex = d.excerpt && typeof d.excerpt === "object" ? d.excerpt : {};
   const excerpt = { q: text(ex.q), a: text(ex.a) };
-  const excerptOk = excerpt.a && isFromTranscript(excerpt.a, index) && (!excerpt.q || isFromTranscript(excerpt.q, index));
+  const excerptOk =
+    excerpt.a &&
+    isFromTranscript(excerpt.a, index) &&
+    (!excerpt.q || isFromTranscript(excerpt.q, index)) &&
+    similarity(excerpt.a, pullQuote.text) < 0.6; // not the pull quote again
 
   return {
     paragraphs: kept,
     pullQuote,
     excerpt: excerptOk ? excerpt : { q: "", a: "" },
     unverified,
+    unsupported: unsupported.slice(0, 8),
+    quotedShare,
   };
 }
