@@ -641,12 +641,16 @@ const year = (v) => {
   return m ? m[1] : "";
 };
 
-// Sentences about what the interview doesn't say ("인터뷰 일자와 인터뷰어는 기록에 남아 있지
-// 않다") are noise in a book; they are removed wherever the model writes them.
-const ABOUT_MISSING = /(남아\s?있지\s?않|알려지지\s?않|알려져\s?있지\s?않|확인되지\s?않|확인할\s?수\s?없|언급되지\s?않|밝혀지지\s?않|나와\s?있지\s?않|알\s?수\s?없)/;
+// Sentences about what the interview or record doesn't say ("인터뷰 일자와 인터뷰어는 기록에
+// 남아 있지 않다", "정확한 연도는 알려지지 않았다") are noise in a book; they are removed wherever
+// the model writes them. Both parts must match, so real content such as "살던 집은 지금 남아
+// 있지 않다" is kept.
+const MISSING_SUBJECT = /(인터뷰|녹음|녹취|기록|일자|날짜|연도|시기|인터뷰어|정보|자료|출처)/;
+const MISSING_NEGATION = /(남아\s?있지\s?않|알려지지\s?않|알려져\s?있지\s?않|알려진\s?바\s?(가\s?)?없|확인되지\s?않|확인할\s?수\s?없|확인되지\s?못|언급되지\s?않|언급이\s?없|밝혀지지\s?않|밝히지\s?않|밝혀\s?(두지|놓지)\s?않|나와\s?있지\s?않|전해지지\s?않|기록되지\s?않|기록이\s?없|알\s?수\s?없)/;
+const aboutMissing = (x) => MISSING_SUBJECT.test(x) && MISSING_NEGATION.test(x);
 function withoutMissingTalk(text) {
   const sentences = String(text).match(/[^.!?。]+[.!?。]?["”’']?\s*/g) || [text];
-  return sentences.filter((x) => !ABOUT_MISSING.test(x)).join("").trim();
+  return sentences.filter((x) => !aboutMissing(x)).join("").trim();
 }
 
 function paragraphs(v) {
@@ -691,7 +695,7 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
   const kind = ["life", "work", "mixed"].includes(d.kind) ? d.kind : "life";
 
   const timeline = list(d.timeline)
-    .filter((t) => t && typeof t === "object" && text(t.event))
+    .filter((t) => t && typeof t === "object" && text(t.event) && !aboutMissing(text(t.event)))
     .map((t) => {
       const ch = parseInt(t.chapter, 10);
       return {
@@ -720,7 +724,7 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
     epigraph,
     people: list(d.people)
       .filter((p) => p && typeof p === "object" && (text(p.name) || text(p.relation)))
-      .map((p) => ({ name: text(p.name), relation: text(p.relation), note: text(p.note) }))
+      .map((p) => ({ name: text(p.name), relation: text(p.relation), note: withoutMissingTalk(text(p.note)) }))
       .filter((p) => {
         const subject = text(d.subjectName) || settings.subjectName || "";
         if (subject && p.name === subject) return false; // the main character
@@ -754,6 +758,7 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
     const fresh = sentences.filter((s) => {
       const key = s.replace(/[^가-힣a-zA-Z0-9]/g, "");
       if (key.length < 8) return true;
+      if (aboutMissing(s)) return false; // talk about what the record lacks
       // Shown on its own page (맺는 말, epigraph): don't repeat it in a chapter.
       if (key.length >= 15 && reserved.some((r) => similarity(r, s) > 0.5)) return false;
       if (seen.has(key)) return false;

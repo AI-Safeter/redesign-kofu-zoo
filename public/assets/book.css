@@ -425,6 +425,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .letter__sign { margin: 1.4em 0 0; text-align: right; font-size: var(--text-size); font-weight: 600; }
 
 /* Timeline (연보), grouped by chapter */
+.timeline__note { margin: -0.8em 0 1.6em; font: 0.88rem/1.6 var(--sans); color: var(--muted); word-break: keep-all; }
 .timeline__group { margin: 2em 0 0.6em; font: 600 0.9rem var(--sans); color: var(--accent); }
 .timeline__group:first-child { margin-top: 0; }
 .timeline__group a { color: inherit; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }

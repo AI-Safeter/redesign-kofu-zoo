@@ -103,7 +103,7 @@
       label: "표지",
       node: el("div", { className: "cover" }, [
         el("div", { className: "cover__top" }, [
-          book.sample ? el("p", { className: "cover__badge", text: "샘플 · 가상의 인물" }) : null,
+          book.sample ? el("p", { className: "cover__badge", text: book.meta && book.meta.origin ? "샘플 · 사람이 쓴 예시 · 가상의 인물" : "샘플 · 가상의 인물" }) : null,
           el("p", { className: "cover__kicker", text: work ? "인터뷰 기록" : book.kind === "mixed" ? "한 사람의 삶과 일" : "한 사람의 생애 기록" }),
         ]),
         el("div", { className: "cover__main" }, [
@@ -174,7 +174,8 @@
 
   // Sentences in the preface/epilogue the interview doesn't support, shown only while editing.
   function frameNote(book) {
-    var list = book.frameUnsupported || [];
+    var frame = norm((book.prologue || []).concat(book.epilogue || []).join(" "));
+    var list = (book.frameUnsupported || []).filter(function (u) { return frame.indexOf(norm(u).slice(0, 20)) >= 0; });
     if (!list.length) return null;
     return el("div", { className: "verify-note", role: "note" }, [
       el("p", { text: "녹취록에 근거가 약한 문장입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }),
@@ -349,7 +350,13 @@
     return {
       kind: "timeline",
       label: "연보",
-      node: el("div", null, [el("h2", { className: "page__heading", text: "연보" }), wrap]),
+      node: el("div", null, [
+        el("h2", { className: "page__heading", text: "연보" }),
+        (book.timeline || []).some(function (t) { return t.approx; })
+          ? el("p", { className: "timeline__note", text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." })
+          : null,
+        wrap,
+      ]),
     };
   }
 
