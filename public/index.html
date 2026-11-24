@@ -6,16 +6,14 @@
   <title>인생 이야기 전자책</title>
   <meta name="description" content="인터뷰 녹음 하나로 한 사람의 삶을 연대기 전자책으로 엮어 드립니다.">
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/book.css">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
   <header class="site-head">
     <a class="brand" href="/">
-      <img src="/assets/icon.svg" alt="" width="28" height="28">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.5h6a2.5 2.5 0 0 1 2.5 2.5v11a2 2 0 0 0-2-2H3.5zM20.5 5.5h-6A2.5 2.5 0 0 0 12 8v11a2 2 0 0 1 2-2h6.5z"/></svg>
       <span>인생 이야기 전자책</span>
     </a>
     <a class="link" href="/book?sample">샘플 책 보기</a>
@@ -50,7 +48,7 @@
         <h3 class="step__title" id="step1-title"><span class="step__num">1</span> 녹음 올리기</h3>
         <label id="dropzone" class="dropzone">
           <input id="audio-file" type="file" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.webm">
-          <span class="dropzone__icon" aria-hidden="true">♪</span>
+          <span class="dropzone__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4.5 14.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg></span>
           <span class="dropzone__main" id="dropzone-main">녹음 파일을 끌어다 놓거나 눌러서 고르세요</span>
           <span class="dropzone__sub">MP3, M4A, WAV 등 · 한국어 인터뷰 · 2시간 이내 권장</span>
         </label>
