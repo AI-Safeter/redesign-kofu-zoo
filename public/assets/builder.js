@@ -386,7 +386,7 @@
       $("fixes-status").textContent = "AI가 확실히 잘못 들린 말을 찾지 못했어요. 그래도 이름과 숫자는 한 번 훑어봐 주세요.";
       return;
     }
-    var places = fixes.reduce(function (n, f) { return n + (current.split(f.heard).length - 1); }, 0);
+    var places = fixes.reduce(function (n, f) { return n + (f.heard.length <= 2 ? 1 : current.split(f.heard).length - 1); }, 0);
     $("fixes-status").textContent = "고칠 만한 말 " + fixes.length + "개(모두 " + places + "곳)를 찾았어요. AI가 확실하다고 본 것만 미리 체크해 두었어요. 녹음을 떠올리며 맞는 것만 체크하고 ‘체크한 것 고치기’를 누르세요.";
     fixes.forEach(function (f, i) {
       var li = document.createElement("li");
@@ -397,6 +397,8 @@
       box.checked = f.checked !== false && !unknown;
       box.disabled = unknown;
       box.dataset.heard = f.heard;
+      // Short, common words (e.g. "이젠") change only at the place shown, not everywhere.
+      box.dataset.at = f.heard.length <= 2 ? String(at) : "";
       box.dataset.meant = f.meant;
       var change = document.createElement("span");
       change.className = "fixes__change";
@@ -405,7 +407,7 @@
       var ins = document.createElement("ins");
       ins.textContent = unknown ? "? (녹음을 듣고 직접 고쳐 주세요)" : f.meant;
       change.append(del, " → ", ins);
-      var count = current.split(f.heard).length - 1;
+      var count = f.heard.length <= 2 ? 1 : current.split(f.heard).length - 1;
       var at = current.indexOf(f.heard);
       var ctx = document.createElement("span");
       ctx.className = "fixes__why";
@@ -441,11 +443,19 @@
     var applied = 0;
     var words = 0;
     $("fixes-list").querySelectorAll("input:checked:not(:disabled)").forEach(function (c) {
-      var n = box.value.split(c.dataset.heard).length - 1;
-      if (n) {
-        box.value = box.value.split(c.dataset.heard).join(c.dataset.meant);
-        applied += n;
+      var heard = c.dataset.heard;
+      var at = c.dataset.at ? box.value.indexOf(heard, Math.max(0, parseInt(c.dataset.at, 10) - 40)) : -1;
+      if (c.dataset.at && at >= 0) {
+        box.value = box.value.slice(0, at) + c.dataset.meant + box.value.slice(at + heard.length);
+        applied += 1;
         words++;
+      } else if (!c.dataset.at) {
+        var n = box.value.split(heard).length - 1;
+        if (n) {
+          box.value = box.value.split(heard).join(c.dataset.meant);
+          applied += n;
+          words++;
+        }
       }
       // Keep the list visible: applied items are greyed out, unticked ones can still be applied.
       c.disabled = true;

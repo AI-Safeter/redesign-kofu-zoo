@@ -134,7 +134,7 @@ function outlineRequest(settings, transcript) {
 - subjectName: the main character's name ("" if never mentioned and not given).
 - birthYear: four-digit birth year if the interview gives it or it follows directly from what is said, else "".
 - birthplace: e.g. "경상북도 안동" ("" if unknown).
-- epigraph: one memorable sentence the interviewee actually said (verbatim). Never pick a sentence that looks garbled or misheard.
+- epigraph: one memorable, complete sentence the interviewee actually said (verbatim, ending where their sentence ends). Never pick a fragment, or a sentence that looks garbled or misheard.
 - people: the individual people the interview mentions who matter in the story — family, friends, mentors. Not the main character, not the interviewer, and not groups (직원들, 거래처, 동무들). name ("" if unnamed), relation to the main character (e.g. "아내", "삼촌", "군대 동기"), note: one short phrase from the interview. Do not add people who are not mentioned.
 - chapters: AT MOST ${chapterLimit(settings, transcript)}, together covering everything substantial in the interview. Use fewer chapters when the material is thin: each chapter needs at least two distinct episodes or points. For kind "life" (and the life parts of "mixed"): chronological, periods must not overlap. For kind "work": themes in the order the speaker raised them, with no invented chronology (yearFrom/yearTo/place stay "" unless the speaker gave them). For each:
   - title: a short chapter title, preferably the speaker's own phrase (no "제1장" prefix, no " - " subtitle).
@@ -433,14 +433,43 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
       }
     }
   }
-  // 구술 정리: list the passage's sentences that didn't make it into the chapter.
+  // 구술 정리: find the passage's sentences that didn't make it into the chapter. If much is
+  // missing, ask once more naming them; whatever is still missing is listed in edit mode.
   const span = outline.chapters[chapterIndex].span;
   if (settings.voice === "oral" && span) {
-    const written = indexTranscript(chapter.paragraphs.join(" "));
-    chapter.missing = (transcript.slice(span.from, span.to).match(/[^.!?。\n]+[.!?。]?/g) || [])
+    const reserved = [...list(outline.lastWords), outline.epigraph].filter(Boolean);
+    const passageSentences = (transcript.slice(span.from, span.to).match(/[^.!?。\n]+[.!?。]?/g) || [])
       .map((x) => x.trim())
-      .filter((x) => norm_(x).length >= 15 && support(x, written) < 0.5)
-      .slice(0, 8);
+      .filter((x) => norm_(x).length >= 15 && !reserved.some((r) => similarity(r, x) > 0.5));
+    const missingFrom = (ch) => {
+      const written = indexTranscript(ch.paragraphs.join(" "));
+      return passageSentences.filter((x) => support(x, written) < 0.35);
+    };
+    let missing = missingFrom(chapter);
+    const share = (m) => m.join("").length / Math.max(1, passageSentences.join("").length);
+    if (share(missing) > 0.2 && !signal?.aborted) {
+      const retry = await callModel({
+        settings,
+        transcript,
+        userText:
+          chapterRequest(outline, chapterIndex, transcript, settings) +
+          `\n\nYour previous draft left out parts of the passage. Include all of it, edited for reading, in order — in particular:\n${missing.map((m) => `- ${m}`).join("\n")}`,
+        schema: CHAPTER_SCHEMA,
+        schemaName: "book_chapter",
+        onProgress,
+        signal,
+      }).catch(() => null);
+      if (retry) {
+        const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
+        const againMissing = again.paragraphs.length ? missingFrom(again) : missing;
+        if (share(againMissing) < share(missing) && again.unsupported.length <= chapter.unsupported.length + 1) {
+          chapter = again;
+          model = retry.model;
+          missing = againMissing;
+        }
+      }
+    }
+    chapter.missing = missing.slice(0, 8);
   }
   delete chapter.quotedShare;
   if (chapter.paragraphs.length === 0) throw fail("이 장의 본문을 받지 못했습니다. 다시 시도해 주세요.");
@@ -492,7 +521,7 @@ Rules:
 - Leave colloquial, dialect or nonstandard but real words alone. If a word is a real word that makes sense where it stands, keep it (at most fix its spacing). Do not change style, grammar, word choice or fillers.
 - kind: "term" for names and technical terms, "number" for numbers, otherwise "mishearing".
 - confidence: "high" only when the context leaves no doubt and only one correction is plausible; if two readings are possible, "low".
-- why: a few words of evidence from the transcript.
+- why: a few words of evidence, written in Korean.
 At most 30 items; [] if there are none.`,
     schema: FIXES_SCHEMA,
     schemaName: "transcript_fixes",
@@ -577,7 +606,7 @@ function soundSimilarity(a, b) {
 // them, since they compare against the transcript with skipped words allowed.
 const dropFillers = (s) => String(s).replace(/(^|\s)(음+|어+|으음|아+)(?=\s|[,.]|$)[,]?/g, "$1").replace(/\s{2,}/g, " ").trim();
 
-const RISKY = /시절|깨달|꿈꿨|꿈을 꾸|다짐|증명|마주 앉|눈시울|미소|가슴이 벅|눈물|발견|알게 되|펼쳐|독자적|스며/;
+const RISKY = /시절|깨달|꿈꿨|꿈을 꾸|다짐|증명|마주 앉|눈시울|미소|가슴이 벅|눈물|발견|알게 되|펼쳐|독자적|스며|스미/;
 
 // Numbers with a counter ("10회기", "열네 번", "두 달"): a number the book states must also be in the transcript.
 const NATIVE = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9, 열: 10, 열한: 11, 열두: 12, 열세: 13, 열네: 14, 열다섯: 15, 스무: 20 };
@@ -587,7 +616,7 @@ function numbersIn(textValue) {
   const out = new Set();
   for (const m of String(textValue).matchAll(NUMBER_RE)) {
     const n = /\d/.test(m[1]) ? parseInt(m[1], 10) : NATIVE[m[1]];
-    if (n) out.add(n + m[2].replace(/회차|회기|차시/, "회"));
+    if (n) out.add(n + m[2].replace(/회차|회기|차시/, "회").replace("개월", "달"));
   }
   return out;
 }
@@ -646,7 +675,10 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
   const lastWords = verified(paragraphs(d.lastWords), index).map(dropFillers);
   const title = text(d.title) || "나의 이야기";
   let epigraph = text(d.epigraph);
-  const sameAsTitle = (q) => similarity(q, title) > 0.8 || lastWords.some((w) => similarity(q, w) > 0.6);
+  const sameAsTitle = (q) =>
+    similarity(q, title) > 0.8 ||
+    lastWords.some((w) => similarity(q, w) > 0.6) ||
+    !/(다|요|죠|까|네|니다)[.?!]?\s*$|[?!]\s*$/.test(q); // also: not a fragment
   if ((index && epigraph && !isFromTranscript(epigraph, index)) || (epigraph && sameAsTitle(epigraph))) {
     epigraph = chapters.flatMap((c) => c.quotes).find((q) => !sameAsTitle(q)) || "";
   }
@@ -670,7 +702,9 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
 
   return {
     kind,
-    speakerRole: text(d.speakerRole),
+    speakerRole: text(d.speakerRole)
+      .replace(new RegExp(`\\s*${(text(d.subjectName) || settings.subjectName || "@@").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
+      .trim(),
     speaksAs: d.speaksAs === "우리" ? "우리" : "나",
     title,
     subtitle: text(d.subtitle),

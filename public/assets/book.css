@@ -248,10 +248,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .prose p:first-child, .prose figure + p, .prose p.lead { text-indent: 0; }
 .prose p.lead { font-size: calc(var(--text-size) * 1.06); }
 
-/* Justify only where lines are long enough not to space out individual letters. */
-@media (min-width: 761px) {
-  .prose p { text-align: justify; text-justify: inter-word; }
-}
+/* Ragged right everywhere: with Korean word-keeping (keep-all), justified lines get wide gaps. */
 
 /* Cover: a framed title page */
 .page--cover .page__inner { padding: clamp(14px, 3vw, 22px); }
