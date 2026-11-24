@@ -248,16 +248,13 @@ body { min-height: 100vh; min-height: 100dvh; }
 .prose p:first-child, .prose figure + p, .prose p.lead { text-indent: 0; }
 .prose p.lead { font-size: calc(var(--text-size) * 1.06); }
 
-/* Justify only where lines are long enough not to space out individual letters. */
-@media (min-width: 761px) {
-  .prose p { text-align: justify; text-justify: inter-character; }
-}
+/* Ragged right everywhere: with Korean word-keeping (keep-all), justified lines get wide gaps. */
 
 /* Cover: a framed title page */
 .page--cover .page__inner { padding: clamp(14px, 3vw, 22px); }
 .cover {
-  min-height: min(calc(100vh - 190px), 880px);
-  min-height: min(calc(100dvh - 190px), 880px);
+  min-height: min(calc(100vh - 240px), 880px);
+  min-height: min(calc(100dvh - 240px), 880px);
   border: 1px solid var(--accent);
   outline: 1px solid var(--accent);
   outline-offset: -7px;
@@ -419,7 +416,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 
 /* 한눈에 보기: key ideas of a work interview */
 .terms { margin: 0; display: grid; gap: 0; }
-.terms dt { font-weight: 700; font-size: var(--text-size); padding-top: 14px; border-top: 1px solid var(--rule); word-break: keep-all; }
+.terms dt { break-after: avoid; font-weight: 700; font-size: var(--text-size); padding-top: 14px; border-top: 1px solid var(--rule); word-break: keep-all; }
 .terms dt:first-child { border-top: 0; padding-top: 0; }
 .terms dd { margin: 4px 0 14px; color: var(--ink-soft); font-size: calc(var(--text-size) * 0.95); line-height: 1.7; word-break: keep-all; }
 

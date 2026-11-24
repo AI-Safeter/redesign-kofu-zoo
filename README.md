@@ -24,7 +24,8 @@ A family book must not put words in anyone's mouth, so the pipeline checks the m
 Browser                                   Vercel functions (api/)            External APIs
 ───────                                   ───────────────────────            ─────────────
 audio file ─▶ decode at 16 kHz mono,
-              cut into ~100 s WAV chunks ─▶ /api/transcribe (per chunk) ─▶ Groq Whisper large-v3 (Korean, free tier)
+              cut into ~100 s WAV chunks ─▶ /api/transcribe (per chunk) ─▶ Qwen 3.8 Omni Flash / Gemini 2.5 Flash (OpenRouter),
+                                                               falling back to Groq Whisper large-v3 (free)
 transcript (user reviews & fixes names)
             ─▶ /api/outline ─────────────▶ Claude or a free OpenRouter model: title, chapter plan, prologue, timeline, epilogue
             ─▶ /api/chapter × N (3 at once) ▶ same model: each chapter's text + pull quote
@@ -33,7 +34,9 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 ```
 
 - Long recordings are split in the browser, at quiet moments, so every request stays under Vercel's 4.5 MB body limit.
-- When Groq's free tier says "slow down", the browser waits the time Groq asks for and retries that chunk automatically.
+- **Why audio language models instead of Whisper:** on a real 9-minute Korean interview, scored on 17 hard spots (names, numbers, terms, the speaker's introduction), the app's Whisper pieces got 5/17 and even the whole file only 10/17, and Whisper's output changed when the audio start moved by 0.4 s. Qwen 3.8 Omni Flash got 13–14/17 and Gemini 2.5 Flash 13–14/17 on the same pieces, kept the speaker's fillers and invented nothing. Qwen costs about 2 cents per hour of audio.
+- If the audio models fail (or the OpenRouter account has no credit), each piece falls back to Groq Whisper. When Groq's free tier says "slow down", the browser waits the time Groq asks for and retries.
+- After transcription, an AI proofreading step lists likely mishearings for the user to tick; numbers, names and terms are never pre-ticked.
 - Each chapter is its own request, so no single function call comes close to the 300 s limit. The transcript is sent with prompt caching, so repeated calls for one book reuse it cheaply.
 - Claude is told to use only facts from the interview, quote the interviewee's real words, and leave uncertain dates approximate.
 - Nothing is stored on the server. Books live in the browser that made them, and **보기 설정 → HTML 파일로 저장** downloads a single self-contained `.html` file you can send to family.
@@ -50,12 +53,14 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
    |---|---|---|
    | `ANTHROPIC_API_KEY` | one of these two | Writing the book with Claude (best quality, paid). <https://platform.claude.com> |
    | `OPENROUTER_API_KEY` | one of these two | Writing the book with free models through OpenRouter, used when `ANTHROPIC_API_KEY` is not set. <https://openrouter.ai/keys> |
-   | `GROQ_API_KEY` | for audio | Transcribing audio, free. Create a key at <https://console.groq.com/keys>. Without it, users can still paste a transcript |
+   | `GROQ_API_KEY` | recommended | Free Whisper fallback for transcription (used when the OpenRouter audio models fail or there's no OpenRouter key). Create a key at <https://console.groq.com/keys>. Without it, users can still paste a transcript |
    | `ACCESS_CODE` | recommended | If set, visitors must enter this code before the app calls the paid APIs |
    | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5` |
    | `CLAUDE_EFFORT` | no | `low` / `medium` / `high` (default) / `xhigh` / `max` |
    | `OPENROUTER_MODELS` | no | Comma-separated models, tried in order. Default: `nvidia/nemotron-3-ultra-550b-a55b:free`, `baidu/ernie-5.5-flash-preview:free`, `google/gemma-4-31b-it:free` |
    | `WRITER_PROVIDER` | no | `anthropic` or `openrouter`, to choose when both keys are set |
+   | `OPENROUTER_AUDIO_MODELS` | no | Audio models for transcription, tried in order. Default: `qwen/qwen3.8-omni-flash`, `google/gemini-2.5-flash`. These are paid (≈$0.02 and ≈$0.15 per hour of audio), so the OpenRouter account needs some credit |
+   | `TRANSCRIBE_PROVIDER` | no | `openrouter`, `groq` or `openai` to force one transcription engine |
    | `GROQ_TRANSCRIBE_MODEL` | no | Defaults to `whisper-large-v3` (`whisper-large-v3-turbo` is faster, slightly less accurate) |
    | `OPENAI_API_KEY` | no | Paid alternative to Groq for transcription; used only when `GROQ_API_KEY` is not set or `TRANSCRIBE_PROVIDER=openai` |
    | `OPENAI_TRANSCRIBE_MODEL` | no | Defaults to `whisper-1` |
@@ -66,7 +71,7 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 
 ## Rough cost per book
 
-For a 1-hour interview: transcription is free on Groq's free tier, which allows about 2 hours of audio per hour (7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. With OpenRouter's free models, writing is free too (free models allow about 20 requests a minute; one book uses 6–9). Free models are good but noticeably weaker writers than Claude, and they are sometimes busy, in which case the next model in the list is used. With Claude, writing is 1 outline call plus 5–8 chapter calls on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
+For a 1-hour interview: transcription costs about $0.02 with Qwen 3.8 Omni Flash (or nothing on Groq's free Whisper fallback, which allows about 2 hours of audio per hour: 7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. With OpenRouter's free models, writing is free too (free models allow about 20 requests a minute; one book uses 6–9). Free models are good but noticeably weaker writers than Claude, and they are sometimes busy, in which case the next model in the list is used. With Claude, writing is 1 outline call plus 5–8 chapter calls on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
 
 ## Run locally
 
@@ -93,9 +98,11 @@ public/
     app.css             builder styles
 api/
   config.js             which features this deployment has keys for
-  transcribe.js         one audio chunk → text (Groq, or OpenAI as a fallback)
-  outline.js            transcript → book plan (Claude)
-  chapter.js            transcript + plan → one chapter (Claude)
+  transcribe.js         one audio chunk → text (OpenRouter audio models, Whisper fallback)
+  _lib/audio-llm.js     transcription with audio language models (Qwen, Gemini) via OpenRouter
+  outline.js            transcript → book plan
+  chapter.js            transcript + plan → one chapter
+  fixes.js              transcript → suggested corrections of mishearings
   _lib/writer.js        prompts, JSON schemas, Claude calls, output clean-up and checks
   _lib/verify.js        checks that quotations appear in the transcript
   _lib/openrouter.js    OpenRouter (free models) calls

@@ -11,7 +11,9 @@
   var CHUNK_SEC = 100;
   var SEARCH_SEC = 8; // look for a quiet spot within the last 8 s of each chunk
   var DIRECT_MAX = 4 * 1024 * 1024;
-  var DIRECT_TYPES = /\.(mp3|m4a|mp4|wav|webm|mpeg|mpga|ogg|oga|flac)$/i;
+  // Small files are sent as they are only in formats every engine accepts (the audio models
+  // take WAV and MP3); anything else is decoded and sent as WAV pieces.
+  var DIRECT_TYPES = /\.(mp3|wav)$/i;
 
   function decode(arrayBuffer) {
     var Ctx = window.AudioContext || window.webkitAudioContext;

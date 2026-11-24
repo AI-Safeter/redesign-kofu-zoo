@@ -1,11 +1,14 @@
 // Transcribes one audio chunk (sent by the browser as the raw request body).
 // The browser splits long recordings into chunks small enough for Vercel's 4.5 MB request limit.
 //
-// Providers (both speak the same OpenAI-style API):
-//   groq   — free tier, Whisper large-v3 (default when GROQ_API_KEY is set)
-//   openai — paid, whisper-1 / gpt-4o-transcribe (used when only OPENAI_API_KEY is set)
+// Engines, in order:
+//   OpenRouter audio models (Qwen 3.8 Omni Flash, then Gemini 2.5 Flash) when OPENROUTER_API_KEY
+//     is set — far more accurate on Korean interviews, about 2 cents per hour of audio;
+//   Whisper as the fallback: groq (free tier, large-v3) or openai (paid, whisper-1).
+// TRANSCRIBE_PROVIDER=groq|openai|openrouter forces one.
 import { checkAccess, errorResponse, json, isMock } from "./_lib/http.js";
 import { mockTranscribe } from "./_lib/mock.js";
+import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels } from "./_lib/audio-llm.js";
 
 const MAX_BYTES = 4_400_000;
 
@@ -24,6 +27,11 @@ const PROVIDERS = {
     model: () => process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1",
   },
 };
+
+/** Whether this deployment can transcribe at all. */
+export function canTranscribe() {
+  return audioModelsEnabled() || Boolean(transcriptionProvider());
+}
 
 export function transcriptionProvider() {
   const wanted = (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase();
@@ -44,16 +52,35 @@ export async function POST(request) {
   if (audio.byteLength > MAX_BYTES) return errorResponse("오디오 조각이 너무 큽니다.", 413);
   if (isMock()) return json({ text: await mockTranscribe(index) });
 
-  const provider = transcriptionProvider();
-  if (!provider) {
-    return errorResponse("음성 인식용 API 키(GROQ_API_KEY)가 서버에 설정되지 않았습니다. 녹취록을 직접 붙여넣어 주세요.", 500);
-  }
-
   const type = request.headers.get("content-type") || "audio/wav";
   const name = url.searchParams.get("name") || "chunk.wav";
-  // Names and terms the user typed, sent as a bare list. A descriptive prompt sentence made
-  // Whisper skip the start of real recordings, so nothing else is added.
+  // Names and terms the user typed. For Whisper they are sent as a bare list: a descriptive
+  // prompt sentence made it skip the start of real recordings.
   const hint = (url.searchParams.get("hint") || "").slice(0, 300).trim();
+  // The end of the previous piece's text, as context for the audio models.
+  const prev = (url.searchParams.get("prev") || "").slice(-300).trim();
+
+  const provider = transcriptionProvider();
+  if (audioModelsEnabled() && audioFormat(type, name)) {
+    try {
+      // The second model runs at the same time; its text only feeds the proofreading step.
+      const second = checkModel();
+      const [main, alt] = await Promise.all([
+        transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal }),
+        second
+          ? transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal, only: second }).catch(() => null)
+          : null,
+      ]);
+      const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
+      return json({ text: tidy(main.text), engine: main.model, alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
+    } catch (err) {
+      console.warn("Audio models failed, falling back to Whisper:", err.message);
+      if (!provider) return errorResponse("음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.", 502);
+    }
+  }
+  if (!provider) {
+    return errorResponse("음성 인식용 API 키가 서버에 설정되지 않았습니다. 녹취록을 직접 붙여넣어 주세요.", 500);
+  }
 
   const first = await recognize(provider, { audio, type, name, model: provider.model(), prompt: hint });
   if (first.error) return first.error;
@@ -65,7 +92,23 @@ export async function POST(request) {
     const second = await recognize(provider, { audio, type, name, model: provider.altModel?.() || provider.model(), prompt: "" });
     if (!second.error && score(second) > score(first)) best = second;
   }
-  return json({ text: buildText(best) });
+  return json({ text: buildText(best), engine: provider.name });
+}
+
+/** Starts a new paragraph at a sentence end every ~400 characters. */
+function paragraphs(text) {
+  const sentences = text.match(/[^.?!。]+[.?!。]+["”']?\s*|[^.?!。]+$/g) || [text];
+  let out = "";
+  let run = 0;
+  for (const s of sentences) {
+    const t = s.trim();
+    if (!t) continue;
+    if (out) out += run > 400 ? "\n" : " ";
+    if (run > 400) run = 0;
+    out += t;
+    run += t.length;
+  }
+  return out;
 }
 
 async function recognize(provider, { audio, type, name, model, prompt }) {

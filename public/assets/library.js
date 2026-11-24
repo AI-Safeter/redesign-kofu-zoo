@@ -83,7 +83,7 @@
   function plainHtml(book) {
     var h = function (tag, text) { return text ? "<" + tag + ">" + esc(text) + "</" + tag + ">" : ""; };
     var paras = function (list) { return (list || []).map(function (p) { return h("p", p); }).join(""); };
-    var out = h("h1", book.title) + h("p", book.subtitle) + h("p", book.subjectName);
+    var out = h("h1", book.title) + h("p", book.subtitle) + h("p", [book.subjectName, book.speakerRole].filter(Boolean).join(" · ")) + (book.epigraph ? "<blockquote>" + esc(book.epigraph) + "</blockquote>" : "");
     if (book.prologue && book.prologue.length) out += h("h2", "책을 펴내며") + paras(book.prologue);
     (book.chapters || []).forEach(function (c, i) {
       out += h("h2", "제" + (i + 1) + "장 " + c.title) + paras(c.paragraphs);
@@ -113,7 +113,7 @@
       "<style>\n" + css.replace(/<\/style/gi, "<\\/style") + "\n</style>\n</head>\n<body>\n" +
       '<div id="book"></div>\n' +
       '<noscript><div style="max-width:40em;margin:0 auto;padding:24px 16px;font-family:serif;line-height:1.8;word-break:keep-all">' +
-      "<p><b>이 미리보기에서는 책 넘기기 기능이 동작하지 않아요. 파일을 내려받아 브라우저로 열면 책처럼 볼 수 있어요.</b></p>" +
+      "<p><b>이 화면에서는 책 넘기기 기능이 동작하지 않아 글만 보여 드려요. 크롬이나 사파리 같은 브라우저로 열면 책처럼 볼 수 있어요.</b></p>" +
       plainHtml(book) + "</div></noscript>\n" +
       '<script id="book-data" type="application/json">' + data + "</script>\n" +
       "<script>\n" + js.replace(/<\/script/gi, "<\\/script") + "\n" +
