@@ -419,8 +419,7 @@
       pendingText = text;
       $("merge-choice").hidden = false;
       // The old suggestions belong to the old text.
-      $("fixes-list").textContent = "";
-      $("fixes-apply").hidden = true;
+      hideFixes();
       setTimeout(function () { $("merge-replace").focus({ preventScroll: true }); }, 400);
       $("merge-choice").scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -438,22 +437,25 @@
 
   // ----- AI proofreading: suggestions the user accepts one by one -----
 
+  // The box stays hidden unless the AI is checking or has something to suggest.
   var fixesBusy = false;
+  function hideFixes() {
+    $("fixes-box").hidden = true;
+    $("fixes-list").textContent = "";
+    $("fixes-apply").hidden = true;
+  }
   async function findFixes() {
     var transcript = $("transcript").value.trim();
     if (fixesBusy) return;
     if (transcript.length < 200) {
-      $("fixes-list").textContent = "";
-      $("fixes-apply").hidden = true;
-      $("fixes-status").textContent = "녹취록이 200자 이상이어야 찾을 수 있어요.";
+      hideFixes();
       return;
     }
     fixesBusy = true;
     forgetUndo();
-    $("fixes-find").disabled = true;
-    $("fixes-list").textContent = "";
-    $("fixes-apply").hidden = true;
-    $("fixes-status").textContent = "AI가 녹취록을 읽으며 잘못 들린 말을 찾는 중… (1분 안팎)";
+    hideFixes();
+    $("fixes-box").hidden = false;
+    $("fixes-status").textContent = "AI가 녹취록에서 잘못 들린 말을 찾고 있어요… (1분 안팎)";
     try {
       var res = await withRetry(function () {
         return streamCall("/api/fixes", {
@@ -464,10 +466,9 @@
       }, 2);
       renderFixes(res.fixes || []);
     } catch (e) {
-      $("fixes-status").textContent = "찾지 못했어요: " + e.message + " 직접 훑어보고 고쳐도 됩니다.";
+      hideFixes(); // optional help: the transcript can still be checked and edited by hand
     } finally {
       fixesBusy = false;
-      $("fixes-find").disabled = false;
     }
   }
 
@@ -477,11 +478,11 @@
     var current = $("transcript").value;
     fixes = fixes.filter(function (f) { return current.indexOf(f.heard) >= 0; });
     if (!fixes.length) {
-      $("fixes-status").textContent = "AI가 확실히 잘못 들린 말을 찾지 못했어요. 그래도 이름과 숫자는 한 번 훑어봐 주세요.";
+      hideFixes();
       return;
     }
     var places = fixes.reduce(function (n, f) { return n + (f.heard.length <= 2 ? 1 : current.split(f.heard).length - 1); }, 0);
-    $("fixes-status").textContent = "고칠 만한 말 " + fixes.length + "개(모두 " + places + "곳)를 찾았어요. AI가 확실하다고 본 것만 미리 체크해 두었어요. 녹음을 떠올리며 맞는 것만 체크하고 ‘체크한 것 고치기’를 누르세요.";
+    $("fixes-status").textContent = "AI가 " + fixes.length + "개(" + places + "곳)를 찾았어요. 확실한 것만 미리 체크해 두었으니, 맞는 것만 남기고 ‘체크한 것 고치기’를 누르세요.";
     fixes.forEach(function (f, i) {
       var li = document.createElement("li");
       var label = document.createElement("label");
@@ -529,7 +530,11 @@
     $("fixes-apply").disabled = !any;
   }
 
-  $("fixes-find").addEventListener("click", findFixes);
+  // A pasted transcript gets the same check as a transcribed one.
+  $("transcript").addEventListener("paste", function () {
+    if (!config.writing) return;
+    setTimeout(findFixes, 300);
+  });
   // Undo restores the transcript as it was before the last "고치기", and re-enables only that
   // batch's items. Any later change to the transcript ends the chance to undo.
   var beforeFixes = null;
@@ -607,26 +612,6 @@
     draftTimer = setTimeout(function () { sset(localStorage, DRAFT_KEY, v); }, 500);
   }
   $("transcript").addEventListener("input", function () { onTranscriptInput(); });
-
-  $("replace-btn").addEventListener("click", function () {
-    var from = $("replace-from").value;
-    var to = $("replace-to").value;
-    var box = $("transcript");
-    if (!from) {
-      $("replace-result").textContent = "바꿀 말을 먼저 적어 주세요.";
-      return;
-    }
-    var count = box.value.split(from).length - 1;
-    if (!count) {
-      $("replace-result").textContent = "‘" + from + "’을(를) 찾지 못했어요.";
-      return;
-    }
-    box.value = box.value.split(from).join(to);
-    onTranscriptInput();
-    $("replace-result").textContent = "‘" + from + "’ " + count + "곳을 ‘" + to + "’(으)로 바꿨어요.";
-    $("replace-from").value = "";
-    $("replace-to").value = "";
-  });
 
   // ---------- Step 3 → generation ----------
 

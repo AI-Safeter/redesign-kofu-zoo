@@ -83,27 +83,14 @@
           <span class="field__hint" id="transcript-count">0자</span>
         </label>
 
-        <div class="fixes" id="fixes-box">
-          <div class="fixes__head">
-            <p class="fixes__title" id="fixes-title">AI가 찾은, 잘못 들린 것 같은 말</p>
-            <button id="fixes-find" type="button" class="btn">AI로 찾아보기</button>
-          </div>
-          <p class="field__hint" id="fixes-status" role="status">녹음을 글로 옮기면 자동으로 찾아 드려요. 녹취록을 붙여넣었다면 ‘AI로 찾아보기’를 누르세요.</p>
+        <div class="fixes" id="fixes-box" hidden>
+          <p class="fixes__title" id="fixes-title">잘못 들린 것 같은 말</p>
+          <p class="field__hint" id="fixes-status" role="status"></p>
           <ul id="fixes-list" class="fixes__list" aria-labelledby="fixes-title"></ul>
           <button id="fixes-apply" type="button" class="primary" hidden>체크한 것 고치기</button>
           <button id="fixes-undo" type="button" class="btn" hidden>되돌리기</button>
         </div>
 
-        <div class="replace" role="group" aria-labelledby="replace-title">
-          <p class="replace__title" id="replace-title">잘못 들린 말 한꺼번에 고치기</p>
-          <div class="replace__row">
-            <input id="replace-from" type="text" placeholder="잘못된 말 (예: 변산북도)" aria-label="잘못된 말">
-            <span aria-hidden="true">→</span>
-            <input id="replace-to" type="text" placeholder="바른 말 (예: 경상북도)" aria-label="바른 말">
-            <button id="replace-btn" type="button" class="btn">모두 바꾸기</button>
-          </div>
-          <p class="field__hint" id="replace-result" role="status"></p>
-        </div>
       </section>
 
       <section class="step" aria-labelledby="step3-title">
