@@ -254,13 +254,16 @@
 
     var unv = c.unverified || [];
     var uns = c.unsupported || [];
+    var mis = c.missing || [];
     var check =
-      unv.length || uns.length
+      unv.length || uns.length || mis.length
         ? el("div", { className: "verify-note", role: "note" }, [
             unv.length ? el("p", { text: "녹취록에서 찾지 못한 인용입니다. 실제로 하신 말씀인지 확인해 주세요:" }) : null,
             unv.length ? el("ul", null, unv.map(function (u) { return el("li", { text: "“" + u + "”" }); })) : null,
             uns.length ? el("p", { text: "녹취록에 근거가 약한 서술입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }) : null,
             uns.length ? el("ul", null, uns.map(function (u) { return el("li", { text: u }); })) : null,
+            mis.length ? el("p", { text: "녹음에서 이 장에 해당하는 말 가운데 책에 빠진 부분입니다. 필요하면 넣어 주세요:" }) : null,
+            mis.length ? el("ul", null, mis.map(function (u) { return el("li", { text: u }); })) : null,
           ])
         : null;
 

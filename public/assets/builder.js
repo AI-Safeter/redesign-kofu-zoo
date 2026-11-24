@@ -759,6 +759,7 @@
           excerpt: w.excerpt,
           unverified: w.unverified || [],
           unsupported: w.unsupported || [],
+          missing: w.missing || [],
         };
       }),
       keyTerms: o.keyTerms || [],
