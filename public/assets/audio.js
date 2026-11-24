@@ -113,10 +113,8 @@
     try {
       buffer = await decode(await file.arrayBuffer());
     } catch (e) {
-      if (direct) {
-        return { duration: null, chunks: [whole(file, null)] };
-      }
-      throw new Error("이 브라우저에서 오디오 파일을 읽지 못했습니다. MP3나 M4A로 변환해서 다시 올려 주세요.");
+      // A file the browser can't decode is not sent anyway: it is usually not audio at all.
+      throw new Error("녹음 파일을 읽지 못했습니다. 파일이 손상됐거나 녹음 파일이 아닐 수 있어요. MP3나 M4A 파일로 다시 올려 주세요.");
     }
 
     var duration = buffer.duration;
@@ -160,5 +158,5 @@
     };
   }
 
-  window.AudioChunker = { prepare: prepare };
+  window.AudioChunker = { prepare: prepare, duration: metadataSeconds };
 })();

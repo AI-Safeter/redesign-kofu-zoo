@@ -125,7 +125,7 @@ input[type="text"], input[type="password"], select, textarea {
   width: 100%;
   min-width: 0;
 }
-textarea { resize: vertical; font-family: var(--serif); line-height: 1.8; }
+textarea { resize: vertical; font-family: var(--serif); line-height: 1.8; word-break: keep-all; overflow-wrap: break-word; }
 #transcript { min-height: 300px; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 [aria-invalid="true"] { border-color: #b3261e; }
@@ -192,7 +192,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .dropzone__icon { font-size: 1.8rem; color: var(--accent); line-height: 1; margin-bottom: 6px; }
 .dropzone__main { font-weight: 600; word-break: keep-all; }
 .dropzone__sub { font-size: 0.85rem; color: var(--ink-soft); word-break: keep-all; }
+#tx-resume { margin: 0 0 14px; font-size: 0.92rem; word-break: keep-all; }
 .file-info { margin: 0 0 16px; font-size: 0.95rem; color: var(--ink-soft); word-break: break-all; }
+.file-info.is-error { color: #b3261e; font-weight: 500; }
+.dropzone.is-disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
+.progress.is-indeterminate .progress__bar span { width: 30% !important; animation: indeterminate 1.2s ease-in-out infinite; }
+@keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .progress.is-indeterminate .progress__bar span { animation: none; } }
 
 /* Buttons */
 .primary {

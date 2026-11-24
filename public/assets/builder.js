@@ -47,7 +47,8 @@
 
   function formatDuration(sec) {
     if (!sec && sec !== 0) return "";
-    var m = Math.floor(sec / 60), s = Math.round(sec % 60);
+    var total = Math.round(sec); // round first, so 179.98 s reads 3분 0초, not 2분 60초
+    var m = Math.floor(total / 60), s = total % 60;
     if (m >= 60) return Math.floor(m / 60) + "시간 " + (m % 60) + "분";
     return m ? m + "분 " + s + "초" : s + "초";
   }
@@ -191,23 +192,44 @@
 
   // ---------- Step 1: audio ----------
 
+  var MEDIA_NAME = /\.(mp3|m4a|mp4|aac|wav|ogg|oga|opus|flac|webm|mov|amr|3gp|wma)$/i;
   function setFile(file) {
     if (!file) return;
-    if (busy) {
-      $("file-info").textContent = "받아쓰기가 끝난 뒤에 다른 파일을 고를 수 있어요.";
-      $("file-info").hidden = false;
+    if (busy) return; // the picker is disabled while transcribing; ignore drops too
+    if (!file.size) {
+      showFileProblem("빈 파일이에요. 녹음 파일을 다시 골라 주세요.");
+      return;
+    }
+    if (!/^(audio|video)\//.test(file.type) && !MEDIA_NAME.test(file.name)) {
+      showFileProblem("녹음(오디오)이나 동영상 파일을 골라 주세요. ‘" + file.name + "’은(는) 녹음 파일이 아니에요.");
       return;
     }
     audioFile = file;
     tx = null;
-    var mb = (file.size / 1024 / 1024).toFixed(1);
-    $("file-info").textContent = "선택한 파일: " + file.name + " (" + mb + "MB)";
-    $("file-info").hidden = false;
+    showFileInfo();
+    $("transcribe-btn").hidden = false;
+    $("transcribe-retry").hidden = true;
     $("transcribe-progress").hidden = true;
     $("transcribe-btn").disabled = busy || !config.transcription;
   }
 
+  function showFileProblem(msg) {
+    $("file-info").textContent = msg;
+    $("file-info").hidden = false;
+    $("file-info").classList.add("is-error");
+  }
+  function showFileInfo() {
+    if (!audioFile) return;
+    $("file-info").classList.remove("is-error");
+    $("file-info").textContent = "선택한 파일: " + audioFile.name + " (" + (audioFile.size / 1024 / 1024).toFixed(1) + "MB)";
+    $("file-info").hidden = false;
+  }
+
   $("audio-file").addEventListener("change", function (e) { setFile(e.target.files[0]); });
+  // A file dropped anywhere else on the page must not make the browser open it (and lose the work).
+  ["dragover", "drop"].forEach(function (t) {
+    document.addEventListener(t, function (e) { if (!dz.contains(e.target)) e.preventDefault(); });
+  });
   var dz = $("dropzone");
   ["dragenter", "dragover"].forEach(function (t) {
     dz.addEventListener(t, function (e) { e.preventDefault(); dz.classList.add("is-over"); });
@@ -223,10 +245,11 @@
     $("dropzone-main").textContent = "눌러서 녹음 파일 고르기";
   }
 
-  function setTranscribeProgress(fraction, label, isError) {
+  function setTranscribeProgress(fraction, label, isError, indeterminate) {
     var box = $("transcribe-progress");
     box.hidden = false;
     box.classList.toggle("is-error", !!isError);
+    box.classList.toggle("is-indeterminate", !!indeterminate);
     var bar = box.querySelector(".progress__bar");
     bar.setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
     bar.querySelector("span").style.width = Math.round(fraction * 100) + "%";
@@ -270,26 +293,67 @@
     }
   }
 
+  // Finished pieces are saved as they arrive, so a reload or a sleeping phone doesn't lose them:
+  // choosing the same file again continues where it stopped.
+  var TX_KEY = "chronicle:tx";
+  function txIdentity(file, hint) {
+    return [file.name, file.size, file.lastModified, hint].join("|");
+  }
+  function saveTxProgress() {
+    if (!tx) return;
+    sset(localStorage, TX_KEY, JSON.stringify({ id: tx.id, name: tx.file.name, total: tx.total, texts: tx.texts, alts: tx.alts || [] }));
+  }
+
   async function transcribe() {
     if (!audioFile || busy) return;
+    var hint = $("hint").value.trim();
+    // A changed name/term hint means the pieces must be heard again with the new spellings.
+    if (tx && tx.file === audioFile && tx.hint !== hint) tx = null;
+
+    // Long recordings can crash a phone's browser while decoding.
+    if (!tx && window.matchMedia && matchMedia("(pointer: coarse)").matches) {
+      var secs = await AudioChunker.duration(audioFile);
+      if (secs && secs > 90 * 60 &&
+          !confirm("녹음이 " + formatDuration(secs) + "이에요. 휴대폰에서는 90분이 넘는 녹음을 받아쓰다 멈출 수 있어요. 컴퓨터에서 하시길 권해요. 그래도 계속할까요?")) return;
+    }
+
     busy = true;
+    keepAwake(true);
     $("audio-file").disabled = true;
+    dz.classList.add("is-disabled");
     $("transcribe-btn").disabled = true;
     $("transcribe-retry").hidden = true;
     $("make-btn").disabled = true;
+    var total = 1;
     try {
       if (!tx || tx.file !== audioFile) {
-        setTranscribeProgress(0.02, "녹음 파일을 준비하는 중… (긴 녹음은 1분 정도 걸릴 수 있어요)");
-        tx = { file: audioFile, prepared: await AudioChunker.prepare(audioFile), texts: [] };
+        setTranscribeProgress(0.02, "녹음 파일을 준비하는 중… (긴 녹음은 1분 정도 걸릴 수 있어요)", false, true);
+        tx = { file: audioFile, hint: hint, prepared: await AudioChunker.prepare(audioFile), texts: [], alts: [] };
+        tx.id = txIdentity(audioFile, hint);
+        tx.total = tx.prepared.chunks.length;
+        var saved = null;
+        try { saved = JSON.parse(sget(localStorage, TX_KEY) || "null"); } catch (err) {}
+        if (saved && saved.id === tx.id && saved.total === tx.total) {
+          tx.texts = saved.texts || [];
+          tx.alts = saved.alts || [];
+        }
       }
       var chunks = tx.prepared.chunks;
-      var hint = $("hint").value.trim();
+      total = chunks.length;
       var lengthNote = tx.prepared.duration ? " · 녹음 길이 " + formatDuration(tx.prepared.duration) : "";
       var done = tx.texts.filter(function (t) { return t != null; }).length;
       var todo = [];
       chunks.forEach(function (c, i) { if (tx.texts[i] == null) todo.push(i); });
+      var started = Date.now();
+      var doneHere = 0;
       var progress = function (extra) {
-        setTranscribeProgress(0.05 + 0.95 * (done / chunks.length), (extra || "음성을 글로 옮기는 중… ") + done + "/" + chunks.length + lengthNote);
+        var eta = "";
+        if (doneHere > 0 && done < total) {
+          var left = Math.ceil((((Date.now() - started) / doneHere) * (total - done)) / 60000);
+          eta = " · 약 " + left + "분 남음";
+        }
+        var keep = total > 3 ? " · 이 화면을 켜 두세요" : "";
+        setTranscribeProgress(0.05 + 0.95 * (done / total), (extra || "음성을 글로 옮기는 중… ") + done + "/" + total + lengthNote + eta + keep);
       };
       progress();
 
@@ -299,6 +363,8 @@
           progress("사용량 한도로 " + sec + "초 기다리는 중… ");
         }, i > 0 ? tx.texts[i - 1] : "");
         done++;
+        doneHere++;
+        saveTxProgress();
         progress();
       });
 
@@ -317,16 +383,28 @@
       setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자. 아래 2단계에서 확인해 주세요.");
       tx.done = true; // before delivering: proofreading starts right away and needs the second transcription
       tx.prepared = { duration: tx.prepared.duration, chunks: [] }; // release the decoded audio
+      sdel(localStorage, TX_KEY);
+      $("tx-resume").hidden = true;
       deliverTranscript(text);
     } catch (e) {
       var got = tx ? tx.texts.filter(function (t) { return t != null; }).length : 0;
-      setTranscribeProgress(0, "받아쓰기를 마치지 못했습니다: " + e.message + (got ? " (" + got + "개 부분은 받아 두었어요)" : ""), true);
-      $("transcribe-retry").hidden = !tx;
+      setTranscribeProgress(got / Math.max(1, total),
+        "받아쓰기를 마치지 못했습니다: " + e.message + (got ? " (" + got + "개 부분은 받아 두었어요)" : ""), true);
+      if (tx && tx.prepared && tx.prepared.chunks && tx.prepared.chunks.length) {
+        // One clear way forward: the retry button replaces the main one.
+        $("transcribe-retry").hidden = false;
+        $("transcribe-btn").hidden = true;
+      } else {
+        tx = null;
+      }
     } finally {
       busy = false;
+      keepAwake(false);
       $("audio-file").disabled = false;
+      dz.classList.remove("is-disabled");
       $("transcribe-btn").disabled = !audioFile || !config.transcription;
       $("make-btn").disabled = !config.writing;
+      if (!$("transcribe-retry").hidden) $("transcribe-retry").focus();
     }
   }
   $("transcribe-btn").addEventListener("click", transcribe);
@@ -340,6 +418,10 @@
     if (box.value.trim()) {
       pendingText = text;
       $("merge-choice").hidden = false;
+      // The old suggestions belong to the old text.
+      $("fixes-list").textContent = "";
+      $("fixes-apply").hidden = true;
+      setTimeout(function () { $("merge-replace").focus({ preventScroll: true }); }, 400);
       $("merge-choice").scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -350,6 +432,7 @@
     onTranscriptInput();
     $("merge-choice").hidden = true;
     $("step2-title").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("transcript").focus({ preventScroll: true });
     if (config.writing) findFixes();
   }
 
@@ -360,6 +443,8 @@
     var transcript = $("transcript").value.trim();
     if (fixesBusy) return;
     if (transcript.length < 200) {
+      $("fixes-list").textContent = "";
+      $("fixes-apply").hidden = true;
       $("fixes-status").textContent = "녹취록이 200자 이상이어야 찾을 수 있어요.";
       return;
     }
@@ -511,6 +596,11 @@
   var draftTimer;
   function onTranscriptInput(fromFixes) {
     if (fromFixes !== true) forgetUndo(); // typing, replacing or a new transcript ends undo
+    if (pendingText && !$("transcript").value.trim() && !$("merge-choice").hidden) {
+      $("transcript").value = pendingText;
+      pendingText = null;
+      $("merge-choice").hidden = true;
+    }
     var v = $("transcript").value;
     $("transcript-count").textContent = v.length.toLocaleString() + "자" + (v.length && v.length < 200 ? " · 책을 만들려면 200자 이상 필요해요" : "");
     clearTimeout(draftTimer);
@@ -916,6 +1006,15 @@
 
   async function init() {
     renderLibrary();
+    try {
+      var unfinishedTx = JSON.parse(sget(localStorage, TX_KEY) || "null");
+      if (unfinishedTx && unfinishedTx.texts) {
+        var n = unfinishedTx.texts.filter(function (t) { return t != null; }).length;
+        $("tx-resume").textContent = "받아쓰던 녹음 ‘" + unfinishedTx.name + "’이 " + n + "/" + unfinishedTx.total +
+          "개 부분까지 끝났어요. 같은 파일을 다시 고르고 ‘녹음을 글로 옮기기’를 누르면 이어서 받아씁니다.";
+        $("tx-resume").hidden = false;
+      }
+    } catch (e) {}
     restoreSavedWork();
     $("access").value = sget(sessionStorage, ACCESS_KEY) || "";
 

@@ -130,7 +130,7 @@ async function recognize(provider, { audio, type, name, model, prompt, signal })
     });
   } catch (err) {
     console.error(`${provider.name} unreachable`, err);
-    return { error: errorResponse(`음성 인식 서버(${provider.name})에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.`, 502) };
+    return { error: errorResponse("음성 인식 서버에 연결하지 못했어요. 잠시 후 다시 눌러 주세요.", 502) };
   }
 
   if (!res.ok) {
@@ -144,14 +144,14 @@ async function recognize(provider, { audio, type, name, model, prompt, signal })
       };
     }
     const message =
-      res.status === 401 ? `${provider.name} API 키가 올바르지 않습니다.` : `음성 인식에 실패했습니다 (${provider.name} ${res.status}).`;
+      res.status === 401 ? "음성 인식 서비스 설정에 문제가 있어요. 사이트 관리자에게 알려 주세요." : "음성 인식에 잠시 문제가 생겼어요. 잠시 후 다시 눌러 주세요.";
     return { error: errorResponse(message, 502) };
   }
   let data;
   try {
     data = await res.json();
   } catch {
-    return { error: errorResponse(`음성 인식 결과를 읽지 못했습니다 (${provider.name}). 다시 시도해 주세요.`, 502) };
+    return { error: errorResponse("음성 인식에 잠시 문제가 생겼어요. 잠시 후 다시 눌러 주세요.", 502) };
   }
   return { text: String(data.text || "").trim(), segments: Array.isArray(data.segments) ? data.segments : null };
 }
