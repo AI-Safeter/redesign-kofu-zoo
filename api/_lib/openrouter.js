@@ -1,34 +1,61 @@
-// Writing through OpenRouter (https://openrouter.ai), used when OPENROUTER_API_KEY is set
-// and no ANTHROPIC_API_KEY is. Defaults to free models that write Korean well; OpenRouter
-// tries the next model in the list when one is busy or rate-limited.
+// Writing through OpenAI-compatible model gateways, tried in order:
+//   1. Nous Portal (https://portal.nousresearch.com) when NOUS_API_KEY is set: Claude Sonnet 5.5
+//      by default, which wrote by far the most natural Korean in a side-by-side test of four
+//      models on the same interview.
+//   2. OpenRouter (https://openrouter.ai) when OPENROUTER_API_KEY is set: free models, used on
+//      their own or when the first gateway fails (no credit, outage).
+// Both speak the same API, so one client serves both.
 
 // Order from real runs: Nemotron answered reliably; ERNIE writes good Korean but often spends
 // its whole budget on hidden reasoning and returns nothing.
-const DEFAULT_MODELS = [
+const OPENROUTER_DEFAULT_MODELS = [
   "nvidia/nemotron-3-ultra-550b-a55b:free",
   "baidu/ernie-5.5-flash-preview:free",
   "google/gemma-4-31b-it:free",
 ];
+const NOUS_DEFAULT_MODELS = ["anthropic/claude-sonnet-5.5"];
+
+const list = (value, fallback) => {
+  const items = String(value || "").split(",").map((m) => m.trim()).filter(Boolean);
+  return items.length ? items : fallback;
+};
+
+/** The configured gateways, in the order they are tried. */
+export function gateways() {
+  const out = [];
+  if (process.env.NOUS_API_KEY) {
+    out.push({
+      name: "Nous",
+      url: "https://inference-api.nousresearch.com/v1/chat/completions",
+      key: process.env.NOUS_API_KEY,
+      models: list(process.env.NOUS_MODELS, NOUS_DEFAULT_MODELS),
+      fallbackList: false, // one model per request; the next model is tried by us
+    });
+  }
+  if (process.env.OPENROUTER_API_KEY) {
+    out.push({
+      name: "OpenRouter",
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      key: process.env.OPENROUTER_API_KEY,
+      models: list(process.env.OPENROUTER_MODELS || process.env.OPENROUTER_MODEL, OPENROUTER_DEFAULT_MODELS),
+      fallbackList: true, // OpenRouter moves to the next model itself when one is busy
+    });
+  }
+  return out;
+}
 
 // Models that just failed (looped, empty or broken output) are skipped for a while, so the
 // other chapters of the same book don't each waste a minute on them. Per server instance.
 const recentFailures = new Map();
 const SKIP_MS = 10 * 60 * 1000;
-function healthy(list) {
+function healthy(models) {
   const now = Date.now();
-  const ok = list.filter((m) => !(now - (recentFailures.get(m) || 0) < SKIP_MS));
-  return ok.length ? ok : list;
-}
-
-function models() {
-  const list = (process.env.OPENROUTER_MODELS || process.env.OPENROUTER_MODEL || "")
-    .split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
-  return list.length ? list : DEFAULT_MODELS;
+  const ok = models.filter((m) => !(now - (recentFailures.get(m) || 0) < SKIP_MS));
+  return ok.length ? ok : models;
 }
 
 const fail = (message, status = 500) => Object.assign(new Error(message), { status });
+const isClaude = (model) => /^anthropic\//.test(model);
 
 /** Pulls the JSON object out of a reply that may be wrapped in ``` fences or extra prose. */
 export function extractJson(text) {
@@ -47,46 +74,79 @@ export function extractJson(text) {
 }
 
 /**
- * Free models occasionally loop until they hit the length limit, or return text that is not
- * JSON. When that happens, the request is tried again without the model that failed.
+ * Asks each gateway in turn. Within a gateway, a model that loops, returns broken JSON or
+ * isn't available is dropped and the next one tried. `cached` is the large text repeated in
+ * every call of a book (the transcript): Claude models keep it in the prompt cache, so after
+ * the first call of a book it is billed at a fraction of the price.
  */
-export async function callOpenRouter(args) {
-  let list = healthy(models());
+export async function callGateways(args) {
+  const all = gateways();
+  if (!all.length) throw fail("글쓰기용 API 키가 서버에 설정되지 않았습니다.");
+  let lastError;
+  for (const gw of all) {
+    try {
+      return await callGateway(gw, args);
+    } catch (err) {
+      if (args.signal?.aborted || err.status === 504) throw err;
+      lastError = err;
+      console.warn(`${gw.name} failed (${err.message}); trying the next gateway`);
+    }
+  }
+  throw lastError;
+}
+
+async function callGateway(gw, args) {
+  let models = healthy(gw.models);
   for (;;) {
     // Don't start another model when the function is about to run out of time.
     if (args.deadline && args.deadline - Date.now() < 20_000) throw Object.assign(new Error("시간이 부족합니다. 다시 시도해 주세요."), { status: 504 });
     try {
-      return await attempt({ ...args, models: list });
+      return await attempt(gw, gw.fallbackList ? models : [models[0]], args);
     } catch (err) {
-      const rest = list.filter((m) => m !== err.servedBy);
-      if (err.retryOther && err.servedBy) recentFailures.set(err.servedBy, Date.now());
-      if (!err.retryOther || !err.servedBy || rest.length === 0 || rest.length === list.length || args.signal?.aborted) throw err;
-      console.warn(`OpenRouter: retrying without ${err.servedBy}`);
-      list = rest;
+      if (args.signal?.aborted) throw err;
+      const failed = err.servedBy || (!gw.fallbackList && models[0]);
+      if (err.retryOther && failed) recentFailures.set(failed, Date.now());
+      const rest = models.filter((m) => m !== failed);
+      // Without a list on the server side, an unusable model (error status) moves us on too.
+      const moveOn = err.retryOther || (!gw.fallbackList && err.status !== 401 && err.status !== 402);
+      if (!moveOn || !failed || rest.length === 0 || rest.length === models.length) throw err;
+      console.warn(`${gw.name}: retrying without ${failed}`);
+      models = rest;
     }
   }
 }
 
-async function attempt({ system, userText, schema, schemaName, onProgress, signal, models: modelList }) {
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+async function attempt(gw, models, { system, cached, userText, schema, schemaName, onProgress, signal }) {
+  const claude = models.every(isClaude);
+  // The repeated text goes last in the system message and is marked for caching, so every
+  // call of the same book shares the same cached beginning.
+  const systemContent = claude && cached
+    ? [{ type: "text", text: system }, { type: "text", text: cached, cache_control: { type: "ephemeral" } }]
+    : [system, cached].filter(Boolean).join("\n\n");
+
+  const res = await fetch(gw.url, {
     method: "POST",
     signal,
     headers: {
-      authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      authorization: `Bearer ${gw.key}`,
       "content-type": "application/json",
       "x-title": "Life Chronicle E-book",
     },
     body: JSON.stringify({
-      models: modelList,
+      ...(models.length > 1 ? { models } : { model: models[0] }),
       stream: true,
       max_tokens: 16000,
-      temperature: 0.4,
-      // Keep hidden reasoning short: it counts against max_tokens and some free models loop in it.
-      reasoning: { effort: "low", exclude: true },
-      // Models that support it are held to the schema; the others get it in the prompt.
-      response_format: { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } },
+      // Claude takes no sampling settings; for the free models a low temperature keeps them on task.
+      ...(claude ? {} : { temperature: 0.4 }),
+      // Keep hidden reasoning short: it is billed as output, and some free models loop in it.
+      reasoning: { effort: process.env.WRITER_EFFORT || "low", exclude: true },
+      usage: { include: true },
+      // The free models are held to the schema by the server. Claude gets it only in the prompt:
+      // Anthropic puts a response schema ahead of everything else, so the outline and the
+      // chapters (different schemas) could never share the cached transcript.
+      ...(claude ? {} : { response_format: { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } } }),
       messages: [
-        { role: "system", content: system },
+        { role: "system", content: systemContent },
         {
           role: "user",
           content: `${userText}\n\nReply with only one JSON object (no markdown, no commentary) that matches this JSON Schema:\n${JSON.stringify(schema)}`,
@@ -97,11 +157,11 @@ async function attempt({ system, userText, schema, schemaName, onProgress, signa
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    console.error("OpenRouter error", res.status, detail.slice(0, 500));
-    if (res.status === 401) throw fail("OpenRouter API 키가 올바르지 않습니다.", 401);
-    if (res.status === 402) throw fail("OpenRouter 크레딧이 부족합니다.", 402);
-    if (res.status === 429) throw fail("무료 AI 모델 사용량 한도에 걸렸습니다. 1~2분 뒤 다시 시도해 주세요.", 429);
-    throw fail(`AI 서버 오류 (OpenRouter ${res.status}). 잠시 후 다시 시도해 주세요.`, 502);
+    console.error(`${gw.name} error`, res.status, detail.slice(0, 500));
+    if (res.status === 401) throw fail(`${gw.name} API 키가 올바르지 않습니다.`, 401);
+    if (res.status === 402) throw fail(`${gw.name} 크레딧이 부족합니다.`, 402);
+    if (res.status === 429) throw fail("AI 모델 사용량 한도에 걸렸습니다. 1~2분 뒤 다시 시도해 주세요.", 429);
+    throw fail(`AI 서버 오류 (${gw.name} ${res.status}). 잠시 후 다시 시도해 주세요.`, 502);
   }
 
   // Read the server-sent event stream and collect the text.
@@ -111,7 +171,7 @@ async function attempt({ system, userText, schema, schemaName, onProgress, signa
   let text = "";
   let lastSent = 0;
   let finish = null;
-  let servedBy = "";
+  let servedBy = models.length === 1 ? models[0] : "";
   let usage = null;
   for (;;) {
     const { done, value } = await reader.read();
@@ -121,7 +181,7 @@ async function attempt({ system, userText, schema, schemaName, onProgress, signa
     buffer = lines.pop();
     for (const raw of lines) {
       const line = raw.trim();
-      if (!line.startsWith("data:")) continue; // skips ": OPENROUTER PROCESSING" keep-alives
+      if (!line.startsWith("data:")) continue; // skips ": PROCESSING" keep-alives
       const data = line.slice(5).trim();
       if (data === "[DONE]") continue;
       let event;
@@ -131,8 +191,8 @@ async function attempt({ system, userText, schema, schemaName, onProgress, signa
         continue;
       }
       if (event.error) {
-        console.error("OpenRouter stream error", event.error);
-        throw fail("AI 모델이 응답 도중 멈췄습니다. 다시 시도해 주세요.", 502);
+        console.error(`${gw.name} stream error`, event.error);
+        throw Object.assign(fail("AI 모델이 응답 도중 멈췄습니다. 다시 시도해 주세요.", 502), { servedBy, retryOther: true });
       }
       if (event.model) servedBy = event.model;
       const choice = event.choices?.[0];
@@ -148,15 +208,25 @@ async function attempt({ system, userText, schema, schemaName, onProgress, signa
       if (event.usage) usage = event.usage;
     }
   }
+  logUsage(gw.name, servedBy, usage);
 
   if (finish === "length") {
-    console.error(`OpenRouter ${servedBy} hit the length limit after ${text.length} chars; tail:`, JSON.stringify(text.slice(-300)));
+    console.error(`${gw.name} ${servedBy} hit the length limit after ${text.length} chars; tail:`, JSON.stringify(text.slice(-300)));
     throw Object.assign(fail("결과가 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요."), { servedBy, retryOther: true });
   }
   const data = extractJson(text);
   if (!data) {
-    console.error(`OpenRouter ${servedBy} reply was not JSON:`, text.slice(0, 500));
+    console.error(`${gw.name} ${servedBy} reply was not JSON:`, text.slice(0, 500));
     throw Object.assign(fail("AI 응답을 해석하지 못했습니다. 다시 시도해 주세요."), { servedBy, retryOther: true });
   }
   return { data, model: servedBy };
+}
+
+/** One line per call in the server log: tokens, how many came from the cache, and the cost. */
+function logUsage(gateway, model, usage) {
+  if (!usage) return;
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
+  const written = usage.prompt_tokens_details?.cache_write_tokens ?? 0;
+  const cost = typeof usage.cost === "number" ? ` $${usage.cost.toFixed(4)}` : "";
+  console.log(`[usage] ${gateway} ${model} in=${usage.prompt_tokens} (cached ${cachedTokens}, cache write ${written}) out=${usage.completion_tokens}${cost}`);
 }

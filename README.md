@@ -51,14 +51,17 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 
    | Name | Required | What for |
    |---|---|---|
-   | `ANTHROPIC_API_KEY` | one of these two | Writing the book with Claude (best quality, paid). <https://platform.claude.com> |
-   | `OPENROUTER_API_KEY` | one of these two | Writing the book with free models through OpenRouter, used when `ANTHROPIC_API_KEY` is not set. <https://openrouter.ai/keys> |
+   | `NOUS_API_KEY` | recommended | Writing the book with Claude Sonnet 5.5 through Nous Portal (best Korean in our tests, ≈$0.25 per 1-hour interview with prompt caching). <https://portal.nousresearch.com> |
+   | `OPENROUTER_API_KEY` | recommended | Speech recognition (Qwen audio model), and free writing models used when there is no Nous key or Nous fails. <https://openrouter.ai/keys> |
+   | `ANTHROPIC_API_KEY` | no | Writing with Claude through Anthropic's own API instead; takes priority over the gateways when set. <https://platform.claude.com> |
    | `GROQ_API_KEY` | recommended | Free Whisper fallback for transcription (used when the OpenRouter audio models fail or there's no OpenRouter key). Create a key at <https://console.groq.com/keys>. Without it, users can still paste a transcript |
    | `ACCESS_CODE` | recommended | If set, visitors must enter this code before the app calls the paid APIs |
    | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5` |
    | `CLAUDE_EFFORT` | no | `low` / `medium` / `high` (default) / `xhigh` / `max` |
    | `OPENROUTER_MODELS` | no | Comma-separated models, tried in order. Default: `nvidia/nemotron-3-ultra-550b-a55b:free`, `baidu/ernie-5.5-flash-preview:free`, `google/gemma-4-31b-it:free` |
-   | `WRITER_PROVIDER` | no | `anthropic` or `openrouter`, to choose when both keys are set |
+   | `NOUS_MODELS` | no | Comma-separated Nous Portal models, tried in order. Default: `anthropic/claude-sonnet-5.5` |
+   | `WRITER_EFFORT` | no | Reasoning effort for the gateway models: `low` (default) / `medium` / `high` |
+   | `WRITER_PROVIDER` | no | `anthropic` or `gateway` (Nous, then OpenRouter), to choose when both kinds of key are set |
    | `OPENROUTER_AUDIO_MODELS` | no | Audio models for transcription, tried in order. Default: `qwen/qwen3.8-omni-flash`, `google/gemini-2.5-flash`. These are paid (≈$0.02 and ≈$0.15 per hour of audio), so the OpenRouter account needs some credit |
    | `TRANSCRIBE_PROVIDER` | no | `openrouter`, `groq` or `openai` to force one transcription engine |
    | `GROQ_TRANSCRIBE_MODEL` | no | Defaults to `whisper-large-v3` (`whisper-large-v3-turbo` is faster, slightly less accurate) |

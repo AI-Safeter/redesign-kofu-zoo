@@ -1,5 +1,6 @@
-// Turns an interview transcript into a life-chronicle e-book, with Claude (ANTHROPIC_API_KEY)
-// or, when only OPENROUTER_API_KEY is set, with free models through OpenRouter.
+// Turns an interview transcript into a life-chronicle e-book, with Claude Sonnet 5.5 through
+// Nous Portal (NOUS_API_KEY), free OpenRouter models as the fallback, or Claude through
+// Anthropic's own API (ANTHROPIC_API_KEY).
 // Two steps: plan the book (outline), then write each chapter in its own request.
 // Every request for one book shares the same system prompt + transcript, which is
 // marked for prompt caching so the transcript is billed in full only once or twice.
@@ -9,20 +10,24 @@
 // near-duplicate paragraphs are dropped.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { callOpenRouter } from "./openrouter.js";
+import { callGateways, gateways } from "./openrouter.js";
 import { indexTranscript, isFromTranscript, quotedSpans, similarity, support } from "./verify.js";
 
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 const EFFORT = process.env.CLAUDE_EFFORT || "high";
 const MAX_TRANSCRIPT_CHARS = 400_000;
 
-/** "anthropic", "openrouter", or null when no writing key is configured. */
+/**
+ * "anthropic" (Claude through Anthropic's own API), "gateway" (Nous Portal and/or OpenRouter),
+ * or null when no writing key is configured.
+ */
 export function writingProvider() {
   const wanted = (process.env.WRITER_PROVIDER || "").toLowerCase();
-  if (wanted === "openrouter" && process.env.OPENROUTER_API_KEY) return "openrouter";
+  const hasGateway = gateways().length > 0;
+  if (wanted === "gateway" && hasGateway) return "gateway";
   if (wanted === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
   if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.OPENROUTER_API_KEY) return "openrouter";
+  if (hasGateway) return "gateway";
   return null;
 }
 
@@ -257,11 +262,12 @@ async function callModel({ settings, transcript, userText, schema, schemaName, o
     signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(left)]) : AbortSignal.timeout(left);
   }
   const provider = writingProvider();
-  if (!provider) throw fail("글쓰기용 API 키(ANTHROPIC_API_KEY 또는 OPENROUTER_API_KEY)가 서버에 설정되지 않았습니다.");
-  if (provider === "openrouter") {
-    return callOpenRouter({
+  if (!provider) throw fail("글쓰기용 API 키(NOUS_API_KEY, OPENROUTER_API_KEY 또는 ANTHROPIC_API_KEY)가 서버에 설정되지 않았습니다.");
+  if (provider === "gateway") {
+    return callGateways({
       deadline,
-      system: `${systemPrompt(settings)}\n\n${transcriptBlock(transcript)}`,
+      system: systemPrompt(settings),
+      cached: transcriptBlock(transcript),
       userText,
       schema,
       schemaName,
@@ -649,6 +655,13 @@ function numbersIn(textValue) {
     if (n) out.add(n + m[3].replace(/회차|회기|차시/, "회").replace("개월", "달"));
   }
   return out;
+}
+
+/** Standalone 뭐/이제/막 per 1,000 characters: high means the text still reads like raw speech. */
+function fillerDensity(paragraphsList) {
+  const all = paragraphsList.join(" ");
+  const n = (all.match(/(^|\s)(뭐|이제|막)(?=\s)/g) || []).length;
+  return all.length ? (n * 1000) / all.length : 0;
 }
 
 function numberMismatch(sentence, index) {
