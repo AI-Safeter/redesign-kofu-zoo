@@ -29,8 +29,8 @@ audio file ─▶ decode at 16 kHz mono,
 transcript ─▶ /api/fixes: confident sound-alike corrections applied automatically
             ─▶ /api/outline ─────────────▶ Claude Sonnet 5.5 via Nous (free OpenRouter models as fallback): title, chapter plan, prologue, timeline, epilogue
             ─▶ /api/chapter × N (3 at once) ▶ same model: each chapter's text + pull quote
-book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit mode, font size,
-                                   dark mode, print/PDF, download as one standalone .html file)
+book JSON saved in localStorage ─▶ /book?id=… reader (page turning, 글 고치기, 한꺼번에 바꾸기, 발행)
+published copy in Vercel Blob ───▶ /read?id=… read-only page anyone with the link can open
 ```
 
 - Long recordings are split in the browser, at quiet moments, so every request stays under Vercel's 4.5 MB body limit.
@@ -39,7 +39,7 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 - The user never has to read the transcript. After transcription, an AI proofreading step finds likely mishearings and applies only the confident sound-alike ones; numbers, names and terms are left as heard. Anything else is corrected in the finished book with 글 고치기.
 - Each chapter is its own request, so no single function call comes close to the 300 s limit. The transcript is sent with prompt caching, so repeated calls for one book reuse it cheaply.
 - Claude is told to use only facts from the interview, quote the interviewee's real words, and leave uncertain dates approximate.
-- Nothing is stored on the server. Books live in the browser that made them, and **보기 설정 → HTML 파일로 저장** downloads a single self-contained `.html` file you can send to family.
+- Books live in the browser that made them. Only a book you **발행** is stored on the server (Vercel Blob), and **발행 취소** deletes it. **파일로 저장** in 내 서재 downloads a single self-contained `.html` file you can send to family.
 - A book in progress is saved after every step: if a chapter fails or the page is reloaded, **이어서 쓰기** continues where it stopped.
 - With OpenRouter, a model that loops or returns broken JSON is skipped and the request is retried on the next free model.
 

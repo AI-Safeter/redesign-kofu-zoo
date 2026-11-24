@@ -1,14 +1,14 @@
 /* Builder page ("새 책 만들기").
    A working tool, not a landing page: white page, plain sections divided by space and one
    hairline, no decorative cards or shadows. Boxes appear only around things you act on (the
-   drop area, choices, suggestions). Near-black text in Pretendard; one blue for actions.
+   drop area, choices). Near-black text in Pretendard; one blue for actions.
    Layout: phones get one column; from 1024px a sidebar (name, steps, 내 서재) sits beside the
-   form, and step 2 puts the transcript and the AI suggestions side by side. */
+   form. */
 
 :root {
   --page: #ffffff;
   --side: #f6f6f7;          /* sidebar */
-  --well: #f3f3f4;          /* drop area, suggestion panel */
+  --well: #f3f3f4;          /* drop area */
   --ink: #18181b;
   --ink-2: #3f3f46;
   --ink-3: #6b6b74;         /* hints, meta, placeholders */
@@ -142,7 +142,7 @@ body {
 .field__label { font-weight: 600; font-size: 0.92rem; }
 .field__label em { font-style: normal; font-weight: 400; color: var(--ink-3); }
 
-input[type="text"], input[type="password"], select, textarea {
+input[type="text"], input[type="password"], select {
   font: 400 1rem/1.5 var(--font);
   color: var(--ink);
   background: var(--page);
@@ -153,10 +153,8 @@ input[type="text"], input[type="password"], select, textarea {
   width: 100%;
   min-width: 0;
 }
-input::placeholder, textarea::placeholder { color: var(--ink-3); }
-input:focus, select:focus, textarea:focus { outline: 2px solid transparent; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-textarea { resize: vertical; line-height: 1.75; }
-[aria-invalid="true"] { border-color: var(--danger); }
+input::placeholder { color: var(--ink-3); }
+input:focus, select:focus { outline: 2px solid transparent; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
@@ -239,7 +237,8 @@ textarea { resize: vertical; line-height: 1.75; }
 @media (min-width: 1024px) {
   .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
   .actions .error { flex-basis: 100%; }
-  .actions .primary--big { width: auto; padding: 14px 36px; }
+  .primary--big { width: auto; padding: 14px 36px; }
+  .make-progress .link-btn { margin-left: 0; }
 }
 
 .make-progress { margin-top: 24px; max-width: 46em; scroll-margin-top: 24px; }
@@ -260,7 +259,6 @@ textarea { resize: vertical; line-height: 1.75; }
 .make-steps li.is-failed .dot { border-color: var(--danger); color: var(--danger); }
 .make-steps li.is-failed .dot::before { content: "!"; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (min-width: 1024px) { .make-progress .primary--big { width: auto; padding: 14px 36px; } .make-progress .link-btn { margin-left: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

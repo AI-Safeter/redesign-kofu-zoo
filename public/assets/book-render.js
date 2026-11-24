@@ -144,15 +144,21 @@
     return body;
   }
 
-  // Sentences in the preface/epilogue the interview doesn't support, shown only while editing.
+  // Lists for the family to check against the recording, shown only while editing:
+  // groups of [heading, lines].
+  function verifyNote(groups) {
+    var nodes = [];
+    groups.forEach(function (g) {
+      if (g[1] && g[1].length) nodes.push(el("p", { text: g[0] }), el("ul", null, g[1].map(function (u) { return el("li", { text: u }); })));
+    });
+    return nodes.length ? el("div", { className: "verify-note", role: "note" }, nodes) : null;
+  }
+
+  // Sentences in the preface/epilogue the interview doesn't support.
   function frameNote(book) {
     var frame = norm((book.prologue || []).concat(book.epilogue || []).join(" "));
     var list = (book.frameUnsupported || []).filter(function (u) { return frame.indexOf(norm(u).slice(0, 20)) >= 0; });
-    if (!list.length) return null;
-    return el("div", { className: "verify-note", role: "note" }, [
-      el("p", { text: "확인할 문장" }),
-      el("ul", null, list.map(function (u) { return el("li", { text: u }); })),
-    ]);
+    return verifyNote([["확인할 문장", list]]);
   }
 
   function prologuePage(book) {
@@ -177,8 +183,9 @@
 
   function chapterPage(book, c, i) {
     var paras = c.paragraphs || [];
+    var ex = c.excerpt || {};
     var q = c.pullQuote && c.pullQuote.text ? c.pullQuote : null;
-    if (q && c.excerpt && c.excerpt.a && norm(c.excerpt.a).indexOf(norm(q.text).slice(0, 20)) >= 0) q = null;
+    if (q && ex.a && norm(ex.a).indexOf(norm(q.text).slice(0, 20)) >= 0) q = null;
 
     // 구술 정리: the body already is the speaker's words, so a pull quote would print them twice,
     // and one that doesn't match them is raw transcript.
@@ -211,32 +218,22 @@
       meta.length ? el("p", { className: "chapter__meta", text: meta.join("  ·  ") }) : null,
     ]);
 
-    var exA = c.excerpt && c.excerpt.a ? norm(c.excerpt.a) : "";
+    var exA = norm(ex.a);
     var excerptRepeats = exA && paras.some(function (p) { return norm(p).indexOf(exA.slice(0, 24)) >= 0; });
-    var excerptComplete = c.excerpt && /[.?!。요다죠까”"]\s*$/.test(c.excerpt.a || "");
     var excerpt =
-      c.excerpt && c.excerpt.a && !excerptRepeats && excerptComplete
+      ex.a && !excerptRepeats && /[.?!。요다죠까”"]\s*$/.test(ex.a)
         ? el("aside", { className: "excerpt", "aria-label": "인터뷰에서" }, [
             el("p", { className: "excerpt__label", text: "인터뷰에서" }),
-            c.excerpt.q ? txt("p", "excerpt__q", c.excerpt.q, "chapters." + i + ".excerpt.q") : null,
-            txt("p", "excerpt__a", c.excerpt.a, "chapters." + i + ".excerpt.a"),
+            ex.q ? txt("p", "excerpt__q", ex.q, "chapters." + i + ".excerpt.q") : null,
+            txt("p", "excerpt__a", ex.a, "chapters." + i + ".excerpt.a"),
           ])
         : null;
 
-    var unv = c.unverified || [];
-    var uns = c.unsupported || [];
-    var mis = c.missing || [];
-    var check =
-      unv.length || uns.length || mis.length
-        ? el("div", { className: "verify-note", role: "note" }, [
-            unv.length ? el("p", { text: "확인할 인용" }) : null,
-            unv.length ? el("ul", null, unv.map(function (u) { return el("li", { text: "“" + u + "”" }); })) : null,
-            uns.length ? el("p", { text: "확인할 문장" }) : null,
-            uns.length ? el("ul", null, uns.map(function (u) { return el("li", { text: u }); })) : null,
-            mis.length ? el("p", { text: "빠진 말" }) : null,
-            mis.length ? el("ul", null, mis.map(function (u) { return el("li", { text: u }); })) : null,
-          ])
-        : null;
+    var check = verifyNote([
+      ["확인할 인용", (c.unverified || []).map(function (u) { return "“" + u + "”"; })],
+      ["확인할 문장", c.unsupported],
+      ["빠진 말", c.missing],
+    ]);
 
     return {
       kind: "chapter",
@@ -288,11 +285,11 @@
       return (a || 99) - (b || 99);
     });
     keys.forEach(function (k) {
-      var chapterEntry = k ? layout.filter(function (e) { return e.chapter === k - 1; })[0] : null;
+      var entry = k && layout.find(function (e) { return e.chapter === k - 1; });
       wrap.appendChild(
-        k && chapterEntry
+        entry
           ? el("h3", { className: "timeline__group" }, [
-              el("a", { href: "#" + (chapterEntry.index + 1), "data-goto": chapterEntry.index }, [
+              el("a", { href: "#" + (entry.index + 1), "data-goto": entry.index }, [
                 chapterLabel(k - 1) + " " + book.chapters[k - 1].title,
               ]),
             ])
@@ -537,7 +534,7 @@
     }
 
     function fromHash() {
-      var n = parseInt((location.hash || "").replace(/^#(page-)?/, ""), 10);
+      var n = parseInt(location.hash.replace(/^#(page-)?/, ""), 10);
       return n >= 1 && n <= pages.length ? n - 1 : 0;
     }
 
@@ -584,7 +581,7 @@
     // ----- Editing -----
     var saveTimer;
     stage.addEventListener("input", function (e) {
-      var path = e.target.getAttribute && e.target.getAttribute("data-path");
+      var path = e.target.getAttribute("data-path");
       if (!path) return;
       setPath(book, path, e.target.textContent.trim());
       if (path === "title") top.querySelector(".reader__title").textContent = book.title;
@@ -610,16 +607,14 @@
     function setEditing(on) {
       editing = on;
       root.classList.toggle("is-editing", on);
-      if (editBtn) editBtn.textContent = on ? "고치기 끝" : "글 고치기";
-      if (replaceBar) {
-        replaceBar.hidden = !on;
-        replaceDone.textContent = "";
-      }
+      editBtn.textContent = on ? "고치기 끝" : "글 고치기";
+      replaceBar.hidden = !on;
+      replaceDone.textContent = "";
       stage.querySelectorAll("[data-path]").forEach(function (n) {
         if (on) n.setAttribute("contenteditable", "plaintext-only");
         else n.removeAttribute("contenteditable");
       });
-      if (!on && options.onChange) {
+      if (!on) {
         clearTimeout(saveTimer);
         options.onChange(book);
       }
@@ -630,7 +625,7 @@
 
   function button(label, title, onClick) {
     var b = el("button", { type: "button", className: "btn", title: title, text: label });
-    if (onClick) b.addEventListener("click", onClick);
+    b.addEventListener("click", onClick);
     return b;
   }
 

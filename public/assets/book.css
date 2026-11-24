@@ -101,8 +101,6 @@ body { min-height: 100vh; min-height: 100dvh; }
 }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn:disabled { opacity: 0.45; cursor: default; }
-.btn[aria-pressed="true"], .btn[aria-expanded="true"],
-.btn[aria-pressed="true"]:hover:not(:disabled), .btn[aria-expanded="true"]:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--page); }
 .btn:focus-visible, .reader__home:focus-visible, .toc__link:focus-visible, .timeline__group a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

@@ -71,7 +71,6 @@ const isRefusal = (t) => REFUSAL.test(t) && t.length < 120 && ABOUT_TASK.test(t)
  */
 export async function transcribeWithAudioModels({ audio, type, name, hint, prev, signal, only }) {
   const format = audioFormat(type, name);
-  if (!format) throw new Error("unsupported format for audio models");
   const seconds = format === "wav" ? wavSeconds(audio) : null;
   const data = Buffer.from(audio).toString("base64");
   let lastError;
@@ -81,7 +80,7 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         // A hung model must not use up the whole function time before the fallbacks get a turn.
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(80_000)]) : AbortSignal.timeout(80_000),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(80_000)]),
         headers: {
           authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "content-type": "application/json",
@@ -116,11 +115,11 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
       if (choice?.finish_reason === "length") throw new Error(`${model}: cut off`);
       return { text, model };
     } catch (err) {
-      if (signal?.aborted) throw err;
+      if (signal.aborted) throw err;
       lastError = err;
     }
   }
-  throw lastError || new Error("no audio model available");
+  throw lastError;
 }
 
 /**

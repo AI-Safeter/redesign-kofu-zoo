@@ -8,6 +8,7 @@
 // found in the transcript, ages are computed from years here (not by the model), and
 // near-duplicate paragraphs are dropped.
 
+import { fail } from "./http.js";
 import { callGateways, gateways } from "./openrouter.js";
 import { indexTranscript, isFromTranscript, quotedSpans, similarity, support } from "./verify.js";
 
@@ -17,8 +18,6 @@ const MAX_CHAPTERS = 12;
 
 /** Whether a writing key is configured. */
 export const canWrite = () => gateways().length > 0;
-
-const fail = (message, status = 500) => Object.assign(new Error(message), { status });
 
 // ---------- Input validation ----------
 
@@ -138,7 +137,7 @@ function outlineRequest(settings, transcript) {
 ${FAITHFULNESS_CHECKLIST}`;
 }
 
-function chapterRequest(outline, index, transcript, settings = {}) {
+function chapterRequest(outline, index, transcript, settings) {
   const ch = outline.chapters[index];
   const plan = outline.chapters
     .map((c, i) => `${i + 1}. ${c.title} (${[c.yearFrom, c.yearTo].filter(Boolean).join("–")}) — ${c.summary}`)
@@ -236,11 +235,8 @@ const RETRY_CUTOFF_MS = 150_000;
 
 async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal, deadline }) {
   // Stop this call when the function's time is nearly up, keeping earlier results.
-  if (deadline) {
-    const left = deadline - Date.now();
-    if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
-    signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(left)]) : AbortSignal.timeout(left);
-  }
+  const left = deadline - Date.now();
+  if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
   if (!canWrite()) throw fail("글쓰기용 API 키(NOUS_API_KEY 또는 OPENROUTER_API_KEY)가 서버에 설정되지 않았습니다.");
   return callGateways({
     deadline,
@@ -250,7 +246,7 @@ async function callModel({ settings, transcript, userText, schema, schemaName, o
     schema,
     schemaName,
     onProgress,
-    signal,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(left)]),
   });
 }
 
@@ -324,7 +320,7 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
 export async function writeChapter({ settings, transcript, outline, index: chapterIndex, onProgress, signal }) {
   const started = Date.now();
   const deadline = started + FUNCTION_BUDGET_MS;
-  const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal?.aborted;
+  const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal.aborted;
   outline = normalizeOutline(outline, null, MAX_CHAPTERS, settings); // the browser sends it back; never trust its shape
   if (!outline.chapters[chapterIndex]) throw fail("잘못된 장 번호입니다.", 400);
   const transcriptIndex = indexWithNumbers(transcript);
@@ -441,7 +437,7 @@ At most 30 items; [] if there are none.`,
   });
   const seen = new Set();
   const fixes = [];
-  for (const f of list(data?.fixes)) {
+  for (const f of list(data.fixes)) {
     let heard = text(f?.heard);
     let meant = text(f?.meant);
     if (!heard || !meant || heard === meant || heard.length > 40) continue;
@@ -550,14 +546,10 @@ function fillerDensity(paragraphsList) {
 
 const indexWithNumbers = (t) => Object.assign(indexTranscript(t), { numbers: numbersIn(t) });
 
-function numberMismatch(sentence, index) {
-  if (!index?.numbers) return false;
-  for (const n of numbersIn(sentence)) if (!index.numbers.has(n)) return true;
-  return false;
-}
+const numberMismatch = (sentence, index) => [...numbersIn(sentence)].some((n) => !index.numbers.has(n));
 
 const norm_ = (s) => String(s || "").toLowerCase().replace(/[^가-힣a-z0-9]/g, "");
-const text = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
+const text = (v) => (v == null ? "" : String(v).trim());
 const list = (v) => (Array.isArray(v) ? v : []);
 const year = (v) => {
   const t = text(v);
@@ -592,7 +584,7 @@ const reservedLines = (outline) => [...list(outline.lastWords), outline.epigraph
 /** Keeps only lines found in the transcript (when an index is given). */
 const verified = (items, index) => (index ? items.filter((q) => isFromTranscript(q, index)) : items);
 
-function normalizeOutline(d, index, maxChapters, settings = {}) {
+function normalizeOutline(d, index, maxChapters, settings) {
   d = d && typeof d === "object" ? d : {};
   const chapters = list(d.chapters)
     .filter((c) => c && typeof c === "object" && text(c.title))
@@ -617,10 +609,11 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
     similarity(q, title) > 0.8 ||
     lastWords.some((w) => similarity(q, w) > 0.6) ||
     !/(다|요|죠|까|네|니다)[.?!]?\s*$|[?!]\s*$/.test(q); // also: not a fragment
-  if ((index && epigraph && !isFromTranscript(epigraph, index)) || (epigraph && sameAsTitle(epigraph))) {
+  if (epigraph && ((index && !isFromTranscript(epigraph, index)) || sameAsTitle(epigraph))) {
     epigraph = chapters.flatMap((c) => c.quotes).find((q) => !sameAsTitle(q)) || "";
   }
   const kind = ["life", "work", "mixed"].includes(d.kind) ? d.kind : "life";
+  const subject = text(d.subjectName) || settings.subjectName;
 
   const timeline = list(d.timeline)
     .filter((t) => t && typeof t === "object" && text(t.event) && !aboutMissing(text(t.event)))
@@ -633,15 +626,14 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
         event: text(t.event),
       };
     })
-    // In chapter order, then by year within a chapter (undated events go last in their chapter).
-    .map((t, i) => ({ t, i }))
-    .sort((a, b) => (a.t.chapter || 99) - (b.t.chapter || 99) || (Number(a.t.year) || 9999) - (Number(b.t.year) || 9999) || a.i - b.i)
-    .map(({ t }) => t);
+    // In chapter order, then by year within a chapter (undated events go last in their chapter;
+    // the sort is stable, so equal entries keep the model's order).
+    .sort((a, b) => (a.chapter || 99) - (b.chapter || 99) || (Number(a.year) || 9999) - (Number(b.year) || 9999));
 
   return {
     kind,
     speakerRole: text(d.speakerRole)
-      .replace(new RegExp(`\\s*${(text(d.subjectName) || settings.subjectName || "@@").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
+      .replace(new RegExp(`\\s*${(subject || "@@").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
       .trim(),
     speaksAs: d.speaksAs === "우리" ? "우리" : "나",
     title,
@@ -654,12 +646,10 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
       .filter((p) => p && typeof p === "object" && (text(p.name) || text(p.relation)))
       .map((p) => ({ name: text(p.name), relation: text(p.relation), note: withoutMissingTalk(text(p.note)) }))
       .filter((p) => {
-        const subject = text(d.subjectName) || settings.subjectName || "";
         if (subject && p.name === subject) return false; // the main character
         if (/주인공|^나\b|^나\(|본인/.test(p.relation)) return false;
         if (/들$|거래처|회사|공장/.test(p.relation) && !p.name) return false; // groups, not people
-        const interviewer = settings.interviewer || "";
-        if (p.name && interviewer && interviewer.includes(p.name)) return false; // the interviewer
+        if (p.name && settings.interviewer.includes(p.name)) return false; // the interviewer
         return true;
       }),
     chapters,
@@ -671,7 +661,7 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
   };
 }
 
-function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
+function normalizeChapter(d, index, plan, outline, settings) {
   d = d && typeof d === "object" ? d : {};
 
   // Drop paragraphs that mostly repeat an earlier one, and sentences said twice

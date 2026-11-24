@@ -25,9 +25,6 @@ const TYPES = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".ico": "image/x-icon",
 };
 
 async function handleApi(req, res, name) {
@@ -66,8 +63,7 @@ async function handleApi(req, res, name) {
 }
 
 async function handleStatic(req, res) {
-  let pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  let file = path.join(root, "public", pathname);
+  let file = path.join(root, "public", decodeURIComponent(new URL(req.url, "http://x").pathname));
   if (!file.startsWith(path.join(root, "public"))) return res.writeHead(403).end();
   try {
     if ((await stat(file)).isDirectory()) file = path.join(file, "index.html");

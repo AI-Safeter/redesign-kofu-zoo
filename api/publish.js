@@ -2,10 +2,9 @@
 // edit token returned the first time replaces the same page; DELETE with them removes it.
 import { createHash, randomBytes } from "node:crypto";
 import { checkAccess, errorResponse, json } from "./_lib/http.js";
-import { canPublish, deleteBook, loadBook, saveBook } from "./_lib/books.js";
+import { canPublish, deleteBook, isBookId, loadBook, saveBook } from "./_lib/books.js";
 
 const MAX_BYTES = 3_000_000;
-const ID = /^[A-Za-z0-9_-]{12}$/;
 const hash = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 export async function POST(request) {
@@ -26,7 +25,7 @@ export async function POST(request) {
     return errorResponse("잘못된 책 데이터입니다.");
   }
 
-  let id = ID.test(body.id || "") ? body.id : null;
+  let id = isBookId(body.id || "") ? body.id : null;
   let token = null;
   if (id) {
     const existing = await loadBook(id);
@@ -52,7 +51,7 @@ export async function DELETE(request) {
   } catch {
     return errorResponse("잘못된 요청입니다.");
   }
-  if (!ID.test(body?.id || "")) return errorResponse("잘못된 요청입니다.");
+  if (!isBookId(body?.id || "")) return errorResponse("잘못된 요청입니다.");
   const existing = await loadBook(body.id);
   if (!existing) return json({ deleted: true }); // already gone
   if (existing.editHash !== hash(body.token)) return errorResponse("이 책을 지울 권한이 없어요.", 403);

@@ -8,6 +8,7 @@ const memory = new Map(); // MOCK_AI only: lost when the dev server restarts
 export const canPublish = () => isMock() || Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
 const pathOf = (id) => `books/${id}.json`;
+export const isBookId = (id) => /^[A-Za-z0-9_-]{12}$/.test(id);
 
 export async function saveBook(id, data) {
   const text = JSON.stringify(data);
