@@ -88,16 +88,33 @@
    * WAV data for a chunk is only built when getBlob() is called, so a long recording
    * never holds every encoded chunk in memory at once.
    */
+  // Reads the duration from the file's metadata without decoding it.
+  function metadataSeconds(file) {
+    return new Promise(function (resolve) {
+      var a = document.createElement("audio");
+      var url = URL.createObjectURL(file);
+      var done = function (v) { URL.revokeObjectURL(url); resolve(v); };
+      a.preload = "metadata";
+      a.onloadedmetadata = function () { done(isFinite(a.duration) ? a.duration : null); };
+      a.onerror = function () { done(null); };
+      setTimeout(function () { done(null); }, 5000);
+      a.src = url;
+    });
+  }
+
   async function prepare(file) {
+    // Refuse very long recordings before decoding them, which could crash a phone's browser.
+    var known = await metadataSeconds(file);
+    if (known && known > 3 * 3600) {
+      throw new Error("녹음이 3시간보다 깁니다. 휴대폰이나 브라우저가 멈출 수 있으니 2시간 이하로 나눠서 올려 주세요.");
+    }
     var direct = file.size <= DIRECT_MAX && DIRECT_TYPES.test(file.name);
     var buffer;
     try {
       buffer = await decode(await file.arrayBuffer());
     } catch (e) {
-      if (direct) {
-        return { duration: null, chunks: [whole(file, null)] };
-      }
-      throw new Error("이 브라우저에서 오디오 파일을 읽지 못했습니다. MP3나 M4A로 변환해서 다시 올려 주세요.");
+      // A file the browser can't decode is not sent anyway: it is usually not audio at all.
+      throw new Error("녹음 파일을 읽지 못했습니다. 파일이 손상됐거나 녹음 파일이 아닐 수 있어요. MP3나 M4A 파일로 다시 올려 주세요.");
     }
 
     var duration = buffer.duration;
@@ -114,7 +131,9 @@
     buffer = null;
     var chunks = [];
     var pos = 0;
-    var size = CHUNK_SEC * rate;
+    // At most ~4.2 MB of 16-bit WAV per piece, whatever rate the browser decoded at
+    // (older Safari ignores the 16 kHz request and decodes at 44.1/48 kHz).
+    var size = Math.min(CHUNK_SEC * rate, Math.floor(4.2e6 / 2));
     while (pos < samples.length) {
       var end = Math.min(samples.length, pos + size);
       if (end < samples.length) end = quietestPoint(samples, end - SEARCH_SEC * rate, end, rate);
@@ -139,5 +158,5 @@
     };
   }
 
-  window.AudioChunker = { prepare: prepare };
+  window.AudioChunker = { prepare: prepare, duration: metadataSeconds };
 })();

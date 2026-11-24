@@ -55,6 +55,8 @@ function alignFrom(q, t, start, MIN, GAP) {
     if (piece.length < MIN) return t.slice(pos, pos + GAP + piece.length).includes(piece);
     const next = t.indexOf(piece, pos);
     if (next < 0 || next - pos > GAP) return false;
+    // Skipping 안/못/않/없/아니 would reverse the meaning ("돈을 못 받았어요" → "돈을 받았어요").
+    if (/안|못|않|없|아니/.test(t.slice(pos, next))) return false;
     pos = next;
   }
   return true;

@@ -103,7 +103,7 @@
       label: "표지",
       node: el("div", { className: "cover" }, [
         el("div", { className: "cover__top" }, [
-          book.sample ? el("p", { className: "cover__badge", text: "샘플 · 가상의 인물" }) : null,
+          book.sample ? el("p", { className: "cover__badge", text: book.meta && book.meta.origin ? "샘플 · 사람이 쓴 예시 · 가상의 인물" : "샘플 · 가상의 인물" }) : null,
           el("p", { className: "cover__kicker", text: work ? "인터뷰 기록" : book.kind === "mixed" ? "한 사람의 삶과 일" : "한 사람의 생애 기록" }),
         ]),
         el("div", { className: "cover__main" }, [
@@ -174,7 +174,8 @@
 
   // Sentences in the preface/epilogue the interview doesn't support, shown only while editing.
   function frameNote(book) {
-    var list = book.frameUnsupported || [];
+    var frame = norm((book.prologue || []).concat(book.epilogue || []).join(" "));
+    var list = (book.frameUnsupported || []).filter(function (u) { return frame.indexOf(norm(u).slice(0, 20)) >= 0; });
     if (!list.length) return null;
     return el("div", { className: "verify-note", role: "note" }, [
       el("p", { text: "녹취록에 근거가 약한 문장입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }),
@@ -288,28 +289,21 @@
     ]);
   }
 
-  function keyTermsPage(book) {
-    var dl = el("dl", { className: "terms" });
-    book.keyTerms.forEach(function (k, i) {
-      dl.appendChild(txt("dt", null, k.term, "keyTerms." + i + ".term"));
-      dl.appendChild(txt("dd", null, k.note, "keyTerms." + i + ".note"));
-    });
-    return {
-      kind: "terms",
-      label: "한눈에 보기",
-      node: el("div", null, [el("h2", { className: "page__heading", text: "한눈에 보기" }), dl]),
-    };
-  }
-
   function lastWordsTitle(book) {
     return book.kind === "work" ? "맺는 말" : "남기고 싶은 말";
   }
 
   function lastWordsPage(book) {
+    // Skip a line identical to the epigraph, keeping each paragraph's real index so edits are
+    // saved to the right place.
     var ep = norm(book.epigraph);
-    var words = (book.lastWords || []).filter(function (w) { return !ep || norm(w) !== ep; });
+    var body = el("div", { className: "prose" });
+    (book.lastWords || []).forEach(function (w, i) {
+      if (ep && norm(w) === ep) return;
+      body.appendChild(txt("p", null, w, "lastWords." + i));
+    });
     var letter = el("div", { className: "letter" }, [
-      prose(words, "lastWords"),
+      body,
       book.subjectName ? el("p", { className: "letter__sign", text: "— " + book.subjectName }) : null,
     ]);
     return {
@@ -362,61 +356,22 @@
     return {
       kind: "timeline",
       label: "연보",
-      node: el("div", null, [el("h2", { className: "page__heading", text: "연보" }), wrap]),
+      node: el("div", null, [
+        el("h2", { className: "page__heading", text: "연보" }),
+        (book.timeline || []).some(function (t) { return t.approx; })
+          ? el("p", { className: "timeline__note", text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." })
+          : null,
+        wrap,
+      ]),
     };
   }
 
   function epiloguePage(book) {
-    var s = book.settings || {};
-    var m = book.meta || {};
-    var rows = [
-      ["이야기한 사람", [book.subjectName, book.birthYear ? book.birthYear + "년생" : ""].filter(Boolean).join(", ")],
-      ["들은 사람", s.interviewer],
-      ["인터뷰", [s.interviewDate, s.interviewPlace].filter(Boolean).join(", ")],
-      ["녹음", m.audioSeconds ? Math.floor(m.audioSeconds / 60) + "분" + (m.audioSeconds % 60 ? " " + Math.round(m.audioSeconds % 60) + "초" : "") : ""],
-      ["받아쓰기", (m.transcribers || []).map(modelName).join(", ")],
-      ["만든 날", book.createdAt && !m.origin ? new Date(book.createdAt).toLocaleDateString("ko-KR") : ""],
-      ["글쓴 AI", (m.models || []).map(modelName).join(", ")],
-    ].filter(function (r) { return r[1]; });
-
-    var dl = el("dl", { className: "colophon__facts" });
-    rows.forEach(function (r) {
-      dl.appendChild(el("dt", { text: r[0] }));
-      dl.appendChild(el("dd", { text: r[1] }));
-    });
-
-    var colophon = el("footer", { className: "colophon" }, [
-      txt("p", "colophon__title", book.title, null),
-      dl,
-      // How the book was made: the sample says so itself; generated books get the standard line.
-      el("p", {
-        text:
-          m.origin ||
-          (s.voice === "oral"
-            ? "인터뷰 녹음을 글로 옮긴 뒤, 말한 사람의 말투를 살려 AI가 읽기 좋게 다듬었습니다. 받아쓰기 오류가 남아 있을 수 있습니다."
-            : "인터뷰 녹음을 글로 옮긴 뒤 AI가 초안을 썼습니다. 인용은 녹취록과 대조했지만, 받아쓰기 오류가 남아 있을 수 있습니다."),
-      }),
-      (book.timeline || []).some(function (t) { return t.approx; }) ? el("p", { text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." }) : null,
-    ]);
-    colophon.firstChild.removeAttribute("data-path");
-
     return {
       kind: "epilogue",
       label: "에필로그",
-      node: el("div", null, [el("h2", { className: "page__heading", text: "에필로그" }), prose(book.epilogue, "epilogue"), colophon]),
+      node: el("div", null, [el("h2", { className: "page__heading", text: "에필로그" }), prose(book.epilogue, "epilogue")]),
     };
-  }
-
-  // "nvidia/nemotron-3-ultra-550b-a55b:free" → "Nemotron 3 Ultra (무료)"
-  function modelName(id) {
-    var known = { claude: "Claude", nemotron: "NVIDIA Nemotron", ernie: "Baidu ERNIE", gemma: "Google Gemma", qwen: "Qwen Omni", gemini: "Google Gemini", groq: "Whisper", whisper: "Whisper", mock: "시험 모드" };
-    if (/^groq$/i.test(id)) return "Whisper";
-    var base = String(id).split("/").pop();
-    var free = /:free$/.test(base);
-    base = base.replace(/:free$/, "");
-    var key = Object.keys(known).filter(function (k) { return base.indexOf(k) === 0; })[0];
-    var name = key ? known[key] : base;
-    return name;
   }
 
   function buildPages(book) {
@@ -433,7 +388,6 @@
     book.chapters.forEach(function (c, i) {
       push({ kind: "chapter", toc: true, chapter: i, label: c.title, years: yearsOf(c) });
     });
-    if (book.keyTerms && book.keyTerms.length) push({ kind: "terms", toc: true, label: "한눈에 보기" });
     if (book.lastWords && book.lastWords.length) push({ kind: "lastwords", toc: true, label: lastWordsTitle(book) });
     var dated = (book.timeline || []).some(function (t) { return t.year || t.when; });
     if (dated) push({ kind: "timeline", toc: true, label: "연보" });
@@ -446,7 +400,6 @@
         case "people": return peoplePage(book);
         case "prologue": return prologuePage(book);
         case "chapter": return chapterPage(book, book.chapters[e.chapter], e.chapter);
-        case "terms": return keyTermsPage(book);
         case "lastwords": return lastWordsPage(book);
         case "timeline": return timelinePage(book, layout);
         default: return epiloguePage(book);
@@ -682,8 +635,17 @@
       setPath(book, path, e.target.textContent.trim());
       if (path === "title") top.querySelector(".reader__title").textContent = book.title;
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(function () { options.onChange(book); }, 400);
+      saveTimer = setTimeout(function () { saveTimer = null; options.onChange(book); }, 400);
     });
+    function flushSave() {
+      if (!saveTimer) return;
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      options.onChange(book);
+    }
+    window.addEventListener("pagehide", flushSave);
+    document.addEventListener("visibilitychange", function () { if (document.hidden) flushSave(); });
+    top.querySelector(".reader__home").addEventListener("click", flushSave);
     stage.addEventListener("paste", function (e) {
       if (!editing) return;
       e.preventDefault(); // paste as plain text only

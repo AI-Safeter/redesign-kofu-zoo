@@ -96,7 +96,7 @@ function systemPrompt(settings) {
   return `You are an experienced Korean memoir writer (자서전 작가). You turn a recorded interview into a short e-book about one person: a chronicle of their life in time order when the interview is a life story, or a faithful record of their work and ideas when the interview is mainly about that.
 
 # Ground rules
-- Use only what the interview supports. Never invent people, names, dates, places, events, dialogue or feelings. If the interviewee is unsure of a year, say so ("1960년대 중반 무렵"). If something is missing, leave it out rather than fill the gap.
+- Use only what the interview supports. Never invent people, names, dates, places, events, dialogue or feelings. If the interviewee is unsure of a year, say so ("1960년대 중반 무렵"). If something is missing, leave it out rather than fill the gap — and never write about what is missing or unknown (no "기록에 남아 있지 않다", "알려지지 않았다", "인터뷰 일자는 확인되지 않는다"); simply don't mention it.
 - The transcript was produced by automatic speech recognition. It has no speaker labels, mixes the interviewer's questions with the interviewee's answers, and may contain misheard words. Work out who is speaking from context. Fix an obvious misrecognition only when the context makes the intended word clear.
 ${settings.voice === "oral"
     ? `- This book is the speaker's own words, edited for reading: keep what they said, in their order and their register (~합니다/~해요). Remove fillers (음, 어, 뭐, 이제, 좀, 사실, 그냥, 막, 이렇게, 굉장히, 어떤, 무슨) and repetition; split run-on sentences; fix slips that make a sentence ungrammatical without changing their words (e.g. "지금의 나는 상태는" → "지금 나의 상태는"). Do not add any claim, reason, example, summary or conclusion they did not say. Use no quotation marks and no "~라는 말처럼".`
@@ -146,9 +146,8 @@ function outlineRequest(settings, transcript) {
   - quotes: the interviewee's best verbatim lines for this chapter. Each quote is used in exactly one chapter.
   - notes: a brief for the chapter writer — details, people, places and dates from the transcript that belong here.
 - timeline: key events with a year or age the speaker actually stated, in order (at most 16). Use [] if there are none, which is normal for kind "work". year: the four-digit year (or "" if unknown); approx: true when the year is estimated (e.g. computed from an age) rather than stated; chapter: the number of the chapter it belongs to (1-based); event: a short phrase.
-- keyTerms: for kind "work" or "mixed", 3–8 entries: first an "개요" entry with the basic facts and numbers exactly as stated (e.g. how many sessions, people, months), then key ideas, methods or names the speaker explained, including the goals and the flow of the work if they described them (term: as they named it, correctly spelled; note: one short line from the interview). [] for kind "life".
 - lastWords: the interviewee's message to family, to future generations, or to people who will do the same work, verbatim from the transcript, split into short paragraphs; skip sentences that look garbled or misheard. Empty list if there is none. These words will appear on their own page, so do not plan to use them elsewhere.
-- prologue ("책을 펴내며"): 1–2 short paragraphs, in the third person, about the occasion: who this person is in one line, who sat down with them and when, why this book exists. Do not list years or events; the chapters do that. State only what the interview says: no track record, history, achievements or manner ("차분히", "독자적") they did not mention, and keep their tense (something planned is not something already done).
+- prologue ("책을 펴내며"): 1–2 short paragraphs, in the third person, about the occasion: who this person is in one line, who sat down with them and when (only if known — otherwise don't mention it at all), why this book exists. Do not list years or events; the chapters do that. State only what the interview says: no track record, history, achievements or manner ("차분히", "독자적") they did not mention, and keep their tense (something planned is not something already done).
 - epilogue: one paragraph of reflection on what this life or work shows. No new events and no repeating the lastWords.
 
 ${FAITHFULNESS_CHECKLIST}`;
@@ -165,7 +164,7 @@ function chapterRequest(outline, index, transcript, settings = {}) {
     ...outline.chapters.filter((_, i) => i !== index).flatMap((c) => c.quotes),
   ].filter(Boolean);
   const passage = settings.voice === "oral" && ch.span ? transcript.slice(ch.span.from, ch.span.to).trim() : "";
-  const length = passage ? Math.round((passage.length * 0.85) / 100) * 100 : chapterLength(transcript, outline.chapters.length);
+  const length = passage ? Math.max(300, Math.round((passage.length * 0.85) / 100) * 100) : chapterLength(transcript, outline.chapters.length);
 
   return `The book is planned as follows:
 
@@ -232,7 +231,6 @@ export const OUTLINE_SCHEMA = obj({
     items: obj({ title: str, startsWith: str, yearFrom: str, yearTo: str, place: str, summary: str, events: strArray, quotes: strArray, notes: str }),
   },
   timeline: { type: "array", items: obj({ year: str, approx: { type: "boolean" }, chapter: { type: "integer" }, event: str }) },
-  keyTerms: { type: "array", items: obj({ term: str, note: str }) },
   lastWords: strArray,
   prologue: strArray,
   epilogue: strArray,
@@ -246,11 +244,23 @@ export const CHAPTER_SCHEMA = obj({
 
 // ---------- Calls ----------
 
-async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal }) {
+// Vercel stops a function at 300 s; leave room to send the result.
+const FUNCTION_BUDGET_MS = 270_000;
+// Retries are only started while this much of the budget is left.
+const RETRY_CUTOFF_MS = 150_000;
+
+async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal, deadline }) {
+  // Stop this call when the function's time is nearly up, keeping earlier results.
+  if (deadline) {
+    const left = deadline - Date.now();
+    if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
+    signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(left)]) : AbortSignal.timeout(left);
+  }
   const provider = writingProvider();
   if (!provider) throw fail("글쓰기용 API 키(ANTHROPIC_API_KEY 또는 OPENROUTER_API_KEY)가 서버에 설정되지 않았습니다.");
   if (provider === "openrouter") {
     return callOpenRouter({
+      deadline,
       system: `${systemPrompt(settings)}\n\n${transcriptBlock(transcript)}`,
       userText,
       schema,
@@ -328,6 +338,7 @@ function assignSpans(outline, transcript) {
   }
   const find = (phrase, after) => {
     const n = norm_(phrase).toLowerCase();
+    if (n.length < 8) return -1; // too short to locate reliably: fall back to the notes
     for (const len of [24, 16, 10]) {
       if (n.length < len && len !== 10) continue;
       const at = flat.indexOf(n.slice(0, len), after);
@@ -344,6 +355,8 @@ function assignSpans(outline, transcript) {
     let p = pos[at];
     const prevEnd = Math.max(transcript.lastIndexOf(".", p - 1), transcript.lastIndexOf("?", p - 1), transcript.lastIndexOf("!", p - 1), transcript.lastIndexOf("\n", p - 1));
     if (prevEnd >= 0 && p - prevEnd < 40) p = prevEnd + 1;
+    // Two starts in the same stretch would leave a chapter with (almost) nothing to edit.
+    if (p - starts[starts.length - 1] < 100) return;
     starts.push(p);
     after = at;
   }
@@ -361,13 +374,14 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
     schemaName: "book_outline",
     onProgress,
     signal,
+    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const index = indexTranscript(transcript);
   index.numbers = numbersIn(transcript);
   const outline = normalizeOutline(data, index, chapterLimit(settings, transcript), settings);
   if (settings.voice === "oral") assignSpans(outline, transcript);
   // Sentences in the framing texts that the interview doesn't support, for the family to check.
-  outline.frameUnsupported = [...outline.prologue, ...outline.epilogue, ...outline.keyTerms.map((k) => k.note)]
+  outline.frameUnsupported = [...outline.prologue, ...outline.epilogue]
     .flatMap((p) => p.match(/[^.!?。]+[.!?。]?/g) || [])
     .filter((s) => norm_(s).length >= 8 && ((RISKY.test(s) && support(s, index) < 0.35) || numberMismatch(s, index)))
     .map((s) => s.trim());
@@ -376,6 +390,9 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
 }
 
 export async function writeChapter({ settings, transcript, outline, index: chapterIndex, onProgress, signal }) {
+  const started = Date.now();
+  const deadline = started + FUNCTION_BUDGET_MS;
+  const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal?.aborted;
   outline = normalizeOutline(outline, null, 8, settings); // the browser sends it back; never trust its shape
   if (!outline.chapters[chapterIndex]) throw fail("잘못된 장 번호입니다.", 400);
   const transcriptIndex = indexTranscript(transcript);
@@ -388,11 +405,12 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     schemaName: "book_chapter",
     onProgress,
     signal,
+    deadline,
   });
   let chapter = normalizeChapter(data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
 
   // A chapter that is mostly pasted quotations is not writing: ask once more, with feedback.
-  if (settings.voice !== "oral" && chapter.quotedShare > 0.45 && !signal?.aborted) {
+  if (settings.voice !== "oral" && chapter.quotedShare > 0.45 && canRetry()) {
     const retry = await callModel({
       settings,
       transcript,
@@ -403,6 +421,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
       schemaName: "book_chapter",
       onProgress,
       signal,
+      deadline,
     }).catch(() => null);
     if (retry) {
       const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
@@ -413,7 +432,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     }
   }
   // 구술 정리 that still reads like raw speech ("뭐 … 이제 … 막") gets one more editing pass.
-  if (settings.voice === "oral" && fillerDensity(chapter.paragraphs) > 3 && !signal?.aborted) {
+  if (settings.voice === "oral" && fillerDensity(chapter.paragraphs) > 3 && canRetry()) {
     const retry = await callModel({
       settings,
       transcript,
@@ -424,6 +443,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
       schemaName: "book_chapter",
       onProgress,
       signal,
+      deadline,
     }).catch(() => null);
     if (retry) {
       const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
@@ -447,7 +467,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     };
     let missing = missingFrom(chapter);
     const share = (m) => m.join("").length / Math.max(1, passageSentences.join("").length);
-    if (share(missing) > 0.2 && !signal?.aborted) {
+    if (share(missing) > 0.2 && canRetry()) {
       const retry = await callModel({
         settings,
         transcript,
@@ -527,6 +547,7 @@ At most 30 items; [] if there are none.`,
     schemaName: "transcript_fixes",
     onProgress,
     signal,
+    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const seen = new Set();
   const fixes = [];
@@ -609,22 +630,25 @@ const dropFillers = (s) => String(s).replace(/(^|\s)(음+|어+|으음|아+)(?=\s
 const RISKY = /시절|깨달|꿈꿨|꿈을 꾸|다짐|증명|마주 앉|눈시울|미소|가슴이 벅|눈물|발견|알게 되|펼쳐|독자적|스며|스미/;
 
 // Numbers with a counter ("10회기", "열네 번", "두 달"): a number the book states must also be in the transcript.
-const NATIVE = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9, 열: 10, 열한: 11, 열두: 12, 열세: 13, 열네: 14, 열다섯: 15, 스무: 20 };
+const UNITS = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9 };
+const TENS = { 열: 10, 스물: 20, 스무: 20, 서른: 30, 마흔: 40, 쉰: 50, 예순: 60, 일흔: 70, 여든: 80, 아흔: 90 };
 const COUNTER = "회기|회차|차시|회|명|달|개월|번|년|살|세|시간|분|주|개";
-const NUMBER_RE = new RegExp(`(\\d+|열다섯|열한|열두|열세|열네|스무|다섯|여섯|일곱|여덟|아홉|한|두|세|네|열)\\s?(${COUNTER})`, "g");
+const NUMBER_RE = new RegExp(
+  `(?<![가-힣\\d,])(\\d{1,3}(?:,\\d{3})+|\\d+|(?:열|스물|스무|서른|마흔|쉰|예순|일흔|여든|아흔)(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉)?|다섯|여섯|일곱|여덟|아홉|한|두|세|네)(\\s?)(${COUNTER})`,
+  "g",
+);
+function nativeValue(word) {
+  for (const [t, v] of Object.entries(TENS)) if (word.startsWith(t)) return v + (UNITS[word.slice(t.length)] || 0);
+  return UNITS[word] || 0;
+}
 function numbersIn(textValue) {
   const out = new Set();
   for (const m of String(textValue).matchAll(NUMBER_RE)) {
-    const n = /\d/.test(m[1]) ? parseInt(m[1], 10) : NATIVE[m[1]];
-    if (n) out.add(n + m[2].replace(/회차|회기|차시/, "회").replace("개월", "달"));
+    if (m[1] === "한" && m[3] === "번" && !m[2]) continue; // 한번 = "once / for a try", not a count
+    const n = /\d/.test(m[1]) ? parseInt(m[1].replace(/,/g, ""), 10) : nativeValue(m[1]);
+    if (n) out.add(n + m[3].replace(/회차|회기|차시/, "회").replace("개월", "달"));
   }
   return out;
-}
-/** Standalone 뭐/이제/막 per 1,000 characters: high means the text still reads like raw speech. */
-function fillerDensity(paragraphsList) {
-  const all = paragraphsList.join(" ");
-  const n = (all.match(/(^|\s)(뭐|이제|막)(?=\s)/g) || []).length;
-  return all.length ? (n * 1000) / all.length : 0;
 }
 
 function numberMismatch(sentence, index) {
@@ -642,6 +666,18 @@ const year = (v) => {
   const m = t.match(/(1[89]\d\d|20\d\d)/);
   return m ? m[1] : "";
 };
+
+// Sentences about what the interview or record doesn't say ("인터뷰 일자와 인터뷰어는 기록에
+// 남아 있지 않다", "정확한 연도는 알려지지 않았다") are noise in a book; they are removed wherever
+// the model writes them. Both parts must match, so real content such as "살던 집은 지금 남아
+// 있지 않다" is kept.
+const MISSING_SUBJECT = /(인터뷰|녹음|녹취|기록|일자|날짜|연도|시기|인터뷰어|정보|자료|출처)/;
+const MISSING_NEGATION = /(남아\s?있지\s?않|알려지지\s?않|알려져\s?있지\s?않|알려진\s?바\s?(가\s?)?없|확인되지\s?않|확인할\s?수\s?없|확인되지\s?못|언급되지\s?않|언급이\s?없|밝혀지지\s?않|밝히지\s?않|밝혀\s?(두지|놓지)\s?않|나와\s?있지\s?않|전해지지\s?않|기록되지\s?않|기록이\s?없|알\s?수\s?없)/;
+const aboutMissing = (x) => MISSING_SUBJECT.test(x) && MISSING_NEGATION.test(x);
+function withoutMissingTalk(text) {
+  const sentences = String(text).match(/[^.!?。]+[.!?。]?["”’']?\s*/g) || [text];
+  return sentences.filter((x) => !aboutMissing(x)).join("").trim();
+}
 
 function paragraphs(v) {
   if (Array.isArray(v)) return v.map(text).filter(Boolean);
@@ -685,7 +721,7 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
   const kind = ["life", "work", "mixed"].includes(d.kind) ? d.kind : "life";
 
   const timeline = list(d.timeline)
-    .filter((t) => t && typeof t === "object" && text(t.event))
+    .filter((t) => t && typeof t === "object" && text(t.event) && !aboutMissing(text(t.event)))
     .map((t) => {
       const ch = parseInt(t.chapter, 10);
       return {
@@ -714,7 +750,7 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
     epigraph,
     people: list(d.people)
       .filter((p) => p && typeof p === "object" && (text(p.name) || text(p.relation)))
-      .map((p) => ({ name: text(p.name), relation: text(p.relation), note: text(p.note) }))
+      .map((p) => ({ name: text(p.name), relation: text(p.relation), note: withoutMissingTalk(text(p.note)) }))
       .filter((p) => {
         const subject = text(d.subjectName) || settings.subjectName || "";
         if (subject && p.name === subject) return false; // the main character
@@ -727,13 +763,9 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
     chapters,
     // A timeline with no dated entries is just a second table of contents: leave it out.
     timeline: timeline.some((t) => t.year) ? timeline : [],
-    keyTerms: list(d.keyTerms)
-      .filter((k) => k && typeof k === "object" && text(k.term))
-      .map((k) => ({ term: text(k.term), note: text(k.note) }))
-      .slice(0, 8),
     lastWords,
-    prologue: paragraphs(d.prologue),
-    epilogue: paragraphs(d.epilogue),
+    prologue: paragraphs(d.prologue).map(withoutMissingTalk).filter(Boolean),
+    epilogue: paragraphs(d.epilogue).map(withoutMissingTalk).filter(Boolean),
   };
 }
 
@@ -752,6 +784,9 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
     const fresh = sentences.filter((s) => {
       const key = s.replace(/[^가-힣a-zA-Z0-9]/g, "");
       if (key.length < 8) return true;
+      // Narration about what the interview record lacks; never applied to 구술 정리, where every
+      // sentence is the speaker's own words ("그 시기에는 내일 일을 알 수 없었어요").
+      if (settings.voice !== "oral" && /인터뷰|녹음|녹취|인터뷰어|기록에\s?남/.test(s) && aboutMissing(s)) return false;
       // Shown on its own page (맺는 말, epigraph): don't repeat it in a chapter.
       if (key.length >= 15 && reserved.some((r) => similarity(r, s) > 0.5)) return false;
       if (seen.has(key)) return false;
