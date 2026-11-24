@@ -478,6 +478,10 @@ function soundSimilarity(a, b) {
 // Claude's structured outputs always match the schema; free models through OpenRouter
 // sometimes return a string where a list belongs, or leave a field out.
 
+// Standalone hesitation sounds ("그런 음 방향의") read badly in quoted text. Quote checks ignore
+// them, since they compare against the transcript with skipped words allowed.
+const dropFillers = (s) => String(s).replace(/(^|\s)(음+|어+|으음|아+)(?=\s|[,.]|$)[,]?/g, "$1").replace(/\s{2,}/g, " ").trim();
+
 const RISKY = /시절|깨달|꿈꿨|꿈을 꾸|다짐|증명|마주 앉|눈시울|미소|가슴이 벅|눈물|발견|알게 되|펼쳐|독자적|스며/;
 
 // Numbers with a counter ("10회기", "열네 번", "두 달"): a number the book states must also be in the transcript.
@@ -535,7 +539,7 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
       notes: text(c.notes),
     }));
 
-  const lastWords = verified(paragraphs(d.lastWords), index);
+  const lastWords = verified(paragraphs(d.lastWords), index).map(dropFillers);
   const title = text(d.title) || "나의 이야기";
   let epigraph = text(d.epigraph);
   const sameAsTitle = (q) => similarity(q, title) > 0.8;
@@ -640,13 +644,13 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
   const quotedShare = all ? kept.flatMap(quotedSpans).join("").length / all.length : 0;
 
   const q = d.pullQuote && typeof d.pullQuote === "object" ? d.pullQuote : { text: d.pullQuote };
-  let pullQuote = { text: text(q.text), context: text(q.context) };
+  let pullQuote = { text: dropFillers(text(q.text)), context: text(q.context) };
   if (!isFromTranscript(pullQuote.text, index)) {
     pullQuote = { text: plan.quotes[0] || "", context: pullQuote.text ? pullQuote.context : "" };
   }
 
   const ex = d.excerpt && typeof d.excerpt === "object" ? d.excerpt : {};
-  const excerpt = { q: text(ex.q), a: text(ex.a) };
+  const excerpt = { q: dropFillers(text(ex.q)), a: dropFillers(text(ex.a)) };
   const excerptOk =
     excerpt.a &&
     isFromTranscript(excerpt.a, index) &&
