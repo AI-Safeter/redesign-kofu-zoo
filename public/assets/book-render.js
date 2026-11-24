@@ -9,20 +9,6 @@
 (function () {
   "use strict";
 
-  var THEME_KEY = "chronicle:theme";
-  var SIZE_KEY = "chronicle:size";
-  var SIZES = ["s", "m", "l", "xl"];
-  var SIZE_NAMES = { s: "작게", m: "보통", l: "크게", xl: "아주 크게" };
-
-  function store(key, value) {
-    try {
-      if (value === undefined) return localStorage.getItem(key);
-      localStorage.setItem(key, value);
-    } catch (e) {
-      return null;
-    }
-  }
-
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
     if (attrs) {
@@ -94,27 +80,16 @@
   // ---------- Pages ----------
 
   function coverPage(book) {
-    var created = refYear(book);
-    var work = book.kind === "work";
-    var teller = book.subjectName ? "이야기한 사람 · " + book.subjectName : book.speakerRole || "";
-    var origin = [book.birthYear ? book.birthYear + "년" : "", book.birthplace || book.born || ""].filter(Boolean).join(" ");
     return {
       kind: "cover",
       label: "표지",
       node: el("div", { className: "cover" }, [
         el("div", { className: "cover__top" }, [
           book.sample ? el("p", { className: "cover__badge", text: book.meta && book.meta.origin ? "샘플 · 사람이 쓴 예시 · 가상의 인물" : "샘플 · 가상의 인물" }) : null,
-          el("p", { className: "cover__kicker", text: work ? "인터뷰 기록" : book.kind === "mixed" ? "한 사람의 삶과 일" : "한 사람의 생애 기록" }),
         ]),
         el("div", { className: "cover__main" }, [
           txt("h1", "cover__title", book.title, "title"),
           book.subtitle ? txt("p", "cover__subtitle", book.subtitle, "subtitle") : null,
-        ]),
-        el("div", { className: "cover__bottom" }, [
-          teller ? el("p", { className: "cover__teller", text: teller }) : null,
-          book.subjectName && book.speakerRole ? txt("p", "cover__origin", book.speakerRole, "speakerRole") : null,
-          origin ? el("p", { className: "cover__origin", text: origin + " 출생" }) : null,
-          el("p", { className: "cover__imprint", text: book.kind === "life" || !book.kind ? "가족이 엮은 책 · " + created : created + "년 " + (new Date(book.createdAt || Date.now()).getMonth() + 1) + "월" }),
         ]),
       ]),
     };
@@ -178,7 +153,7 @@
     var list = (book.frameUnsupported || []).filter(function (u) { return frame.indexOf(norm(u).slice(0, 20)) >= 0; });
     if (!list.length) return null;
     return el("div", { className: "verify-note", role: "note" }, [
-      el("p", { text: "녹취록에 근거가 약한 문장입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }),
+      el("p", { text: "확인할 문장" }),
       el("ul", null, list.map(function (u) { return el("li", { text: u }); })),
     ]);
   }
@@ -257,11 +232,11 @@
     var check =
       unv.length || uns.length || mis.length
         ? el("div", { className: "verify-note", role: "note" }, [
-            unv.length ? el("p", { text: "녹취록에서 찾지 못한 인용입니다. 실제로 하신 말씀인지 확인해 주세요:" }) : null,
+            unv.length ? el("p", { text: "확인할 인용" }) : null,
             unv.length ? el("ul", null, unv.map(function (u) { return el("li", { text: "“" + u + "”" }); })) : null,
-            uns.length ? el("p", { text: "녹취록에 근거가 약한 서술입니다. 사실인지 확인하고 아니면 고쳐 주세요:" }) : null,
+            uns.length ? el("p", { text: "확인할 문장" }) : null,
             uns.length ? el("ul", null, uns.map(function (u) { return el("li", { text: u }); })) : null,
-            mis.length ? el("p", { text: "녹음에서 이 장에 해당하는 말 가운데 책에 빠진 부분입니다. 필요하면 넣어 주세요:" }) : null,
+            mis.length ? el("p", { text: "빠진 말" }) : null,
             mis.length ? el("ul", null, mis.map(function (u) { return el("li", { text: u }); })) : null,
           ])
         : null;
@@ -420,99 +395,94 @@
     var editing = false;
 
     document.title = (book.title || "인생 이야기") + (book.subtitle ? " — " + book.subtitle : "");
-    applyTheme(store(THEME_KEY));
-    applySize(store(SIZE_KEY) || "m");
 
-    // ----- Top bar: home, title, contents, view settings -----
-    var viewBtn = button("보기 설정", "글자 크기, 밤 모드, 저장과 인쇄", null);
-    viewBtn.setAttribute("aria-expanded", "false");
-    viewBtn.setAttribute("aria-controls", "reader-panel");
+    // ----- Top bar: home, title, and (for the owner) 글 고치기 · 발행하기 -----
+    var editBtn = options.onChange ? button("글 고치기", "본문을 직접 고칩니다", function () { setEditing(!editing); }) : null;
+    var publishBtn = options.onPublish ? button("발행하기", "읽기 전용 링크를 만듭니다", publish) : null;
     var top = el("header", { className: "reader__top" }, [
       options.homeHref
         ? el("a", { className: "reader__home", href: options.homeHref, text: "← 서재" })
         : el("span", { className: "reader__home" }),
       el("p", { className: "reader__title", text: book.title || "" }),
-      el("div", { className: "reader__actions" }, [
-        button("차례", "차례로 가기", function () { go(1, true); }),
-        viewBtn,
-      ]),
+      el("div", { className: "reader__actions" }, [editBtn, publishBtn]),
     ]);
 
-    // ----- View settings panel -----
-    var sizeDown = button("가−", "글자 작게", function () { stepSize(-1); });
-    var sizeUp = button("가+", "글자 크게", function () { stepSize(1); });
-    var sizeNow = el("span", { className: "panel__value", "aria-live": "polite" });
-    var dayBtn = button("낮", "밝은 화면", function () { setTheme("light"); });
-    var nightBtn = button("밤", "어두운 화면", function () { setTheme("dark"); });
-    var panelRows = [
-      el("div", { className: "panel__row" }, [el("span", { className: "panel__label", text: "글자 크기" }), sizeDown, sizeNow, sizeUp]),
-      el("div", { className: "panel__row" }, [el("span", { className: "panel__label", text: "화면" }), dayBtn, nightBtn]),
-    ];
-    var actionRow = el("div", { className: "panel__row panel__row--actions" });
-    var editBtn;
-    if (options.onChange) {
-      editBtn = button("글 고치기", "본문을 직접 고칩니다", function () {
-        setEditing(!editing);
-        closePanel();
+    // ----- Published link -----
+    var linkIn = el("input", { type: "text", readonly: "readonly", "aria-label": "책 링크" });
+    var linkStatus = el("span", { className: "reader__replace-done", role: "status" });
+    var copyBtn = button("복사", "링크를 복사합니다", function () {
+      linkIn.select();
+      var done = function () { linkStatus.textContent = "복사됨"; };
+      if (navigator.clipboard) navigator.clipboard.writeText(linkIn.value).then(done, function () {});
+      else if (document.execCommand("copy")) done();
+    });
+    var unpublishBtn = options.onUnpublish ? button("발행 취소", "발행한 책을 지웁니다", unpublish) : null;
+    var linkBar = options.onPublish ? el("div", { className: "reader__replace", hidden: "hidden" }, [linkIn, copyBtn, unpublishBtn, linkStatus]) : null;
+    if (linkBar && options.publishedUrl) {
+      linkBar.hidden = false;
+      linkIn.value = options.publishedUrl;
+    }
+    async function publish() {
+      if (editing) setEditing(false); // saves what was typed
+      publishBtn.disabled = true;
+      linkBar.hidden = false;
+      linkStatus.textContent = "발행 중";
+      try {
+        linkIn.value = await options.onPublish(book);
+        linkStatus.textContent = "발행됨";
+      } catch (e) {
+        linkStatus.textContent = e.message;
+      } finally {
+        publishBtn.disabled = false;
+      }
+    }
+    async function unpublish() {
+      if (!confirm("발행한 책을 지울까요?")) return;
+      unpublishBtn.disabled = true;
+      linkStatus.textContent = "지우는 중";
+      try {
+        await options.onUnpublish(book);
+        linkBar.hidden = true;
+        linkIn.value = "";
+        linkStatus.textContent = "";
+      } catch (e) {
+        linkStatus.textContent = e.message;
+      } finally {
+        unpublishBtn.disabled = false;
+      }
+    }
+
+    // ----- Replace all (while editing): a misheard name usually appears in many places -----
+    var findIn = el("input", { type: "text", placeholder: "찾을 말", "aria-label": "찾을 말" });
+    var replaceIn = el("input", { type: "text", placeholder: "바꿀 말", "aria-label": "바꿀 말" });
+    var replaceDone = el("span", { className: "reader__replace-done", role: "status" });
+    var replaceBar = options.onChange
+      ? el("form", { className: "reader__replace", hidden: "hidden" }, [findIn, el("span", { "aria-hidden": "true", text: "→" }), replaceIn, el("button", { type: "submit", className: "btn", text: "모두 바꾸기" }), replaceDone])
+      : null;
+    if (replaceBar) {
+      replaceBar.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var from = findIn.value;
+        if (!from) return;
+        var count = 0;
+        var seen = {};
+        stage.querySelectorAll("[data-path]").forEach(function (n) {
+          if (n.textContent.indexOf(from) < 0) return;
+          var path = n.getAttribute("data-path");
+          if (!seen[path]) count += n.textContent.split(from).length - 1;
+          seen[path] = true;
+          n.textContent = n.textContent.split(from).join(replaceIn.value);
+          setPath(book, path, n.textContent.trim());
+        });
+        // Fields that are not on any page still feed the saved file's plain-text version.
+        ["subjectName", "speakerRole"].forEach(function (k) {
+          if (book[k]) book[k] = String(book[k]).split(from).join(replaceIn.value);
+        });
+        top.querySelector(".reader__title").textContent = book.title || "";
+        replaceDone.textContent = count + "곳";
+        if (count) options.onChange(book);
       });
-      actionRow.appendChild(editBtn);
     }
-    (options.extraActions || []).forEach(function (a) {
-      actionRow.appendChild(button(a.label, a.title, a.onClick));
-    });
-    if (!options.noPrint) {
-      actionRow.appendChild(button("인쇄 · PDF", "인쇄하거나 PDF로 저장", function () {
-        closePanel();
-        window.print();
-      }));
-    }
-    if (actionRow.childNodes.length) panelRows.push(actionRow);
-    var panel = el("div", { className: "reader__panel", id: "reader-panel", role: "dialog", "aria-label": "보기 설정", hidden: "hidden" }, panelRows);
-    viewBtn.addEventListener("click", function () {
-      panel.hidden ? openPanel() : closePanel();
-    });
-    function openPanel() {
-      panel.hidden = false;
-      viewBtn.setAttribute("aria-expanded", "true");
-      var first = panel.querySelector("button:not([disabled])");
-      if (first) first.focus();
-    }
-    function closePanel() {
-      if (panel.hidden) return;
-      panel.hidden = true;
-      viewBtn.setAttribute("aria-expanded", "false");
-    }
-    document.addEventListener("click", function (e) {
-      if (!panel.hidden && !panel.contains(e.target) && e.target !== viewBtn) closePanel();
-    });
-
-    function stepSize(d) {
-      var now = document.documentElement.getAttribute("data-size") || "m";
-      var next = SIZES[Math.min(SIZES.length - 1, Math.max(0, SIZES.indexOf(now) + d))];
-      applySize(next);
-      store(SIZE_KEY, next);
-      syncPanel();
-    }
-    function setTheme(t) {
-      applyTheme(t);
-      store(THEME_KEY, t);
-      syncPanel();
-    }
-    function syncPanel() {
-      var size = document.documentElement.getAttribute("data-size") || "m";
-      sizeNow.textContent = SIZE_NAMES[size];
-      sizeDown.disabled = size === SIZES[0];
-      sizeUp.disabled = size === SIZES[SIZES.length - 1];
-      var dark = isDark();
-      dayBtn.setAttribute("aria-pressed", dark ? "false" : "true");
-      nightBtn.setAttribute("aria-pressed", dark ? "true" : "false");
-    }
-
-    var editNote = el("div", { className: "reader__editnote", role: "status", hidden: "hidden" }, [
-      el("span", { text: "글 고치는 중입니다. 고칠 글자를 눌러 바로 고치세요. 자동으로 저장됩니다." }),
-    ]);
-    var doneBtn = button("고치기 끝", "고치기를 마칩니다", function () { setEditing(false); });
-    editNote.appendChild(doneBtn);
 
     // ----- Pages -----
     var stage = el("main", { className: "reader__stage" });
@@ -536,7 +506,7 @@
 
     root.textContent = "";
     root.className = "reader";
-    [top, panel, editNote, bar, stage, bottom].forEach(function (n) { root.appendChild(n); });
+    [top, replaceBar, linkBar, bar, stage, bottom].forEach(function (n) { if (n) root.appendChild(n); });
 
     var sections = stage.querySelectorAll(".page");
 
@@ -584,10 +554,7 @@
 
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
-        if (!panel.hidden) {
-          closePanel();
-          viewBtn.focus();
-        } else if (editing) setEditing(false);
+        if (editing) setEditing(false);
         return;
       }
       if (editing || e.target.isContentEditable || /input|textarea|select/i.test(e.target.tagName)) return;
@@ -646,8 +613,11 @@
     function setEditing(on) {
       editing = on;
       root.classList.toggle("is-editing", on);
-      editNote.hidden = !on;
       if (editBtn) editBtn.textContent = on ? "고치기 끝" : "글 고치기";
+      if (replaceBar) {
+        replaceBar.hidden = !on;
+        replaceDone.textContent = "";
+      }
       stage.querySelectorAll("[data-path]").forEach(function (n) {
         if (on) n.setAttribute("contenteditable", "plaintext-only");
         else n.removeAttribute("contenteditable");
@@ -658,7 +628,6 @@
       }
     }
 
-    syncPanel();
     go(fromHash(), false);
   }
 
@@ -666,18 +635,6 @@
     var b = el("button", { type: "button", className: "btn", title: title, text: label });
     if (onClick) b.addEventListener("click", onClick);
     return b;
-  }
-
-  function isDark() {
-    var t = document.documentElement.getAttribute("data-theme");
-    if (t) return t === "dark";
-    return window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
-  }
-  function applyTheme(theme) {
-    if (theme === "dark" || theme === "light") document.documentElement.setAttribute("data-theme", theme);
-  }
-  function applySize(size) {
-    document.documentElement.setAttribute("data-size", SIZES.indexOf(size) >= 0 ? size : "m");
   }
 
   window.ChronicleBook = { mount: mount };

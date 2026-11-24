@@ -46,28 +46,67 @@
         return;
       }
 
+      var config = {};
+      if (editable) {
+        try { config = await (await fetch("/api/config")).json(); } catch (e) {}
+      }
+
       ChronicleBook.mount(root, book, {
         homeHref: "/",
         onChange: editable
           ? function (b) {
               if (!Library.save(b) && !warned) {
                 warned = true;
-                alert("브라우저 저장 공간이 부족해 고친 내용을 저장하지 못했습니다. ‘보기 설정 → HTML 파일로 저장’으로 책을 파일로 내려받아 두세요.");
+                alert("브라우저 저장 공간이 부족해 고친 내용을 저장하지 못했습니다. 서재에서 ‘파일로 저장’으로 책을 내려받아 두세요.");
               }
             }
           : null,
-        extraActions: [
-          {
-            label: "HTML 파일로 저장",
-            title: "한 개의 HTML 파일로 내려받기 (가족에게 보내기 좋아요)",
-            onClick: function () {
-              Library.download(book).catch(function (e) {
-                alert(e.message);
-              });
-            },
-          },
-        ],
+        onPublish: editable && config.publishing ? publish : null,
+        onUnpublish: editable && config.publishing ? unpublish : null,
+        publishedUrl: book.published ? linkTo(book.published.id) : null,
       });
+
+      function linkTo(id) { return location.origin + "/read?id=" + id; }
+
+      // Calls /api/publish with the access code this device remembers; asks for it once if it
+      // is missing or wrong.
+      async function call(method, body) {
+        var code = "";
+        try { code = localStorage.getItem("chronicle:access") || ""; } catch (e) {}
+        for (var tries = 0; ; tries++) {
+          var res = await fetch("/api/publish", {
+            method: method,
+            headers: Object.assign({ "content-type": "application/json" }, code ? { "x-access-code": encodeURIComponent(code) } : {}),
+            body: JSON.stringify(body),
+          });
+          var data = {};
+          try { data = await res.json(); } catch (e) {}
+          if (res.status === 401 && tries === 0) {
+            code = (prompt("접근 코드") || "").trim();
+            try { localStorage.setItem("chronicle:access", code); } catch (e) {}
+            if (code) continue;
+          }
+          if (!res.ok) throw new Error(data.error || "다시 시도해 주세요.");
+          return data;
+        }
+      }
+
+      // Uploads the book as a read-only page; publishing again updates the same link.
+      async function publish(b) {
+        var copy = Object.assign({}, b);
+        delete copy.published;
+        var p = b.published || {};
+        var data = await call("POST", { book: copy, id: p.id, token: p.token });
+        b.published = { id: data.id, token: data.token || p.token };
+        Library.save(b);
+        return linkTo(data.id);
+      }
+
+      async function unpublish(b) {
+        await call("DELETE", { id: b.published.id, token: b.published.token });
+        delete b.published;
+        Library.save(b);
+      }
     })();
   </script>
 </body>

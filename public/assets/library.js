@@ -98,7 +98,9 @@
     if (!res[0].ok || !res[1].ok) throw new Error("파일을 불러오지 못했습니다.");
     var css = await res[0].text();
     var js = await res[1].text();
-    var data = JSON.stringify(book).replace(/</g, "\\u003c");
+    var copy = Object.assign({}, book);
+    delete copy.published; // the key that updates the published page stays in this browser
+    var data = JSON.stringify(copy).replace(/</g, "\\u003c");
     return (
       '<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n' +
       '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
