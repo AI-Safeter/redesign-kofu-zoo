@@ -439,14 +439,19 @@
 
   // The box stays hidden unless the AI is checking or has something to suggest.
   var fixesBusy = false;
+  var fixesAgain = false; // a new transcript arrived while a check was running
   function hideFixes() {
     $("fixes-box").hidden = true;
     $("fixes-list").textContent = "";
     $("fixes-apply").hidden = true;
+    $("fixes-retry").hidden = true;
   }
   async function findFixes() {
     var transcript = $("transcript").value.trim();
-    if (fixesBusy) return;
+    if (fixesBusy) {
+      fixesAgain = true;
+      return;
+    }
     if (transcript.length < 200) {
       hideFixes();
       return;
@@ -455,7 +460,8 @@
     forgetUndo();
     hideFixes();
     $("fixes-box").hidden = false;
-    $("fixes-status").textContent = "AI가 녹취록에서 잘못 들린 말을 찾고 있어요… (1분 안팎)";
+    // Screen readers announce a live region only if it was already shown before its text changed.
+    var announce = setTimeout(function () { $("fixes-status").textContent = "AI가 녹취록에서 잘못 들린 말을 찾고 있어요… (1분 안팎)"; }, 100);
     try {
       var res = await withRetry(function () {
         return streamCall("/api/fixes", {
@@ -466,9 +472,15 @@
       }, 2);
       renderFixes(res.fixes || []);
     } catch (e) {
-      hideFixes(); // optional help: the transcript can still be checked and edited by hand
+      $("fixes-status").textContent = "잘못 들린 말을 찾지 못했어요: " + e.message;
+      $("fixes-retry").hidden = false;
     } finally {
+      clearTimeout(announce); // a quick result or error must not be overwritten by the "checking" text
       fixesBusy = false;
+      if (fixesAgain) {
+        fixesAgain = false;
+        findFixes();
+      }
     }
   }
 
@@ -530,9 +542,12 @@
     $("fixes-apply").disabled = !any;
   }
 
-  // A pasted transcript gets the same check as a transcribed one.
-  $("transcript").addEventListener("paste", function () {
-    if (!config.writing) return;
+  $("fixes-retry").addEventListener("click", findFixes);
+  // A pasted transcript gets the same check as a transcribed one. A short paste is an edit:
+  // re-checking then would throw away the suggestions being worked through.
+  $("transcript").addEventListener("paste", function (e) {
+    if (!config.writing || (e.clipboardData.getData("text") || "").length < 200) return;
+    if (tx) tx.altText = ""; // the second transcription belongs to the recording, not to this text
     setTimeout(findFixes, 300);
   });
   // Undo restores the transcript as it was before the last "고치기", and re-enables only that
@@ -980,6 +995,7 @@
         $("resume").hidden = true;
         $("transcript").value = draft;
         onTranscriptInput();
+        if (config.writing) findFixes();
         $("step2-title").scrollIntoView({ behavior: "smooth", block: "start" });
       };
       $("resume-drop").onclick = function () {
@@ -1009,7 +1025,7 @@
       config = await res.json();
     } catch (e) {
       config = { accessCodeRequired: false, transcription: false, writing: false };
-      showNotice(["지금은 책 만들기 기능에 연결할 수 없어요. 샘플 책은 볼 수 있습니다."]);
+      showNotice(["지금은 책 만들기 기능에 연결할 수 없어요."]);
       console.warn("API not reachable: deploy with server functions (e.g. Vercel).");
     }
     $("access-field").hidden = !config.accessCodeRequired;
@@ -1020,7 +1036,7 @@
     }
     if (!config.writing) {
       problems.push("지금은 책 쓰기 기능을 쓸 수 없어요.");
-      console.warn("Writing disabled: set OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
+      console.warn("Writing disabled: set NOUS_API_KEY, OPENROUTER_API_KEY or ANTHROPIC_API_KEY.");
     }
     if (problems.length && $("notice").hidden) showNotice(problems);
     $("make-btn").disabled = !config.writing;

@@ -12,10 +12,10 @@
 </head>
 <body>
   <header class="site-head">
-    <a class="brand" href="/">
+    <h1><a class="brand" href="/">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.5h6a2.5 2.5 0 0 1 2.5 2.5v11a2 2 0 0 0-2-2H3.5zM20.5 5.5h-6A2.5 2.5 0 0 0 12 8v11a2 2 0 0 1 2-2h6.5z"/></svg>
       <span>인생 이야기 전자책</span>
-    </a>
+    </a></h1>
   </header>
 
   <main class="wrap">
@@ -36,7 +36,7 @@
     </section>
 
     <form id="builder" class="card" novalidate>
-      <h1 class="card__title">새 책 만들기</h1>
+      <h2 class="card__title">새 책 만들기</h2>
       <fieldset id="form-fields" class="form-fields">
 
       <section class="step" aria-labelledby="step1-title">
@@ -89,6 +89,7 @@
           <ul id="fixes-list" class="fixes__list" aria-labelledby="fixes-title"></ul>
           <button id="fixes-apply" type="button" class="primary" hidden>체크한 것 고치기</button>
           <button id="fixes-undo" type="button" class="btn" hidden>되돌리기</button>
+          <button id="fixes-retry" type="button" class="btn" hidden>다시 찾기</button>
         </div>
 
       </section>
