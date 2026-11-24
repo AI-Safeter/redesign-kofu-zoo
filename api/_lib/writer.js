@@ -164,7 +164,7 @@ function chapterRequest(outline, index, transcript, settings = {}) {
     ...outline.chapters.filter((_, i) => i !== index).flatMap((c) => c.quotes),
   ].filter(Boolean);
   const passage = settings.voice === "oral" && ch.span ? transcript.slice(ch.span.from, ch.span.to).trim() : "";
-  const length = passage ? Math.round((passage.length * 0.85) / 100) * 100 : chapterLength(transcript, outline.chapters.length);
+  const length = passage ? Math.max(300, Math.round((passage.length * 0.85) / 100) * 100) : chapterLength(transcript, outline.chapters.length);
 
   return `The book is planned as follows:
 
@@ -244,11 +244,23 @@ export const CHAPTER_SCHEMA = obj({
 
 // ---------- Calls ----------
 
-async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal }) {
+// Vercel stops a function at 300 s; leave room to send the result.
+const FUNCTION_BUDGET_MS = 270_000;
+// Retries are only started while this much of the budget is left.
+const RETRY_CUTOFF_MS = 150_000;
+
+async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal, deadline }) {
+  // Stop this call when the function's time is nearly up, keeping earlier results.
+  if (deadline) {
+    const left = deadline - Date.now();
+    if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
+    signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(left)]) : AbortSignal.timeout(left);
+  }
   const provider = writingProvider();
   if (!provider) throw fail("글쓰기용 API 키(ANTHROPIC_API_KEY 또는 OPENROUTER_API_KEY)가 서버에 설정되지 않았습니다.");
   if (provider === "openrouter") {
     return callOpenRouter({
+      deadline,
       system: `${systemPrompt(settings)}\n\n${transcriptBlock(transcript)}`,
       userText,
       schema,
@@ -326,6 +338,7 @@ function assignSpans(outline, transcript) {
   }
   const find = (phrase, after) => {
     const n = norm_(phrase).toLowerCase();
+    if (n.length < 8) return -1; // too short to locate reliably: fall back to the notes
     for (const len of [24, 16, 10]) {
       if (n.length < len && len !== 10) continue;
       const at = flat.indexOf(n.slice(0, len), after);
@@ -342,6 +355,8 @@ function assignSpans(outline, transcript) {
     let p = pos[at];
     const prevEnd = Math.max(transcript.lastIndexOf(".", p - 1), transcript.lastIndexOf("?", p - 1), transcript.lastIndexOf("!", p - 1), transcript.lastIndexOf("\n", p - 1));
     if (prevEnd >= 0 && p - prevEnd < 40) p = prevEnd + 1;
+    // Two starts in the same stretch would leave a chapter with (almost) nothing to edit.
+    if (p - starts[starts.length - 1] < 100) return;
     starts.push(p);
     after = at;
   }
@@ -359,6 +374,7 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
     schemaName: "book_outline",
     onProgress,
     signal,
+    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const index = indexTranscript(transcript);
   index.numbers = numbersIn(transcript);
@@ -374,6 +390,9 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
 }
 
 export async function writeChapter({ settings, transcript, outline, index: chapterIndex, onProgress, signal }) {
+  const started = Date.now();
+  const deadline = started + FUNCTION_BUDGET_MS;
+  const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal?.aborted;
   outline = normalizeOutline(outline, null, 8, settings); // the browser sends it back; never trust its shape
   if (!outline.chapters[chapterIndex]) throw fail("잘못된 장 번호입니다.", 400);
   const transcriptIndex = indexTranscript(transcript);
@@ -386,11 +405,12 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     schemaName: "book_chapter",
     onProgress,
     signal,
+    deadline,
   });
   let chapter = normalizeChapter(data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
 
   // A chapter that is mostly pasted quotations is not writing: ask once more, with feedback.
-  if (settings.voice !== "oral" && chapter.quotedShare > 0.45 && !signal?.aborted) {
+  if (settings.voice !== "oral" && chapter.quotedShare > 0.45 && canRetry()) {
     const retry = await callModel({
       settings,
       transcript,
@@ -401,6 +421,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
       schemaName: "book_chapter",
       onProgress,
       signal,
+      deadline,
     }).catch(() => null);
     if (retry) {
       const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
@@ -411,7 +432,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     }
   }
   // 구술 정리 that still reads like raw speech ("뭐 … 이제 … 막") gets one more editing pass.
-  if (settings.voice === "oral" && fillerDensity(chapter.paragraphs) > 3 && !signal?.aborted) {
+  if (settings.voice === "oral" && fillerDensity(chapter.paragraphs) > 3 && canRetry()) {
     const retry = await callModel({
       settings,
       transcript,
@@ -422,6 +443,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
       schemaName: "book_chapter",
       onProgress,
       signal,
+      deadline,
     }).catch(() => null);
     if (retry) {
       const again = normalizeChapter(retry.data, transcriptIndex, outline.chapters[chapterIndex], outline, settings);
@@ -445,7 +467,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     };
     let missing = missingFrom(chapter);
     const share = (m) => m.join("").length / Math.max(1, passageSentences.join("").length);
-    if (share(missing) > 0.2 && !signal?.aborted) {
+    if (share(missing) > 0.2 && canRetry()) {
       const retry = await callModel({
         settings,
         transcript,
@@ -525,6 +547,7 @@ At most 30 items; [] if there are none.`,
     schemaName: "transcript_fixes",
     onProgress,
     signal,
+    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const seen = new Set();
   const fixes = [];
@@ -607,22 +630,25 @@ const dropFillers = (s) => String(s).replace(/(^|\s)(음+|어+|으음|아+)(?=\s
 const RISKY = /시절|깨달|꿈꿨|꿈을 꾸|다짐|증명|마주 앉|눈시울|미소|가슴이 벅|눈물|발견|알게 되|펼쳐|독자적|스며|스미/;
 
 // Numbers with a counter ("10회기", "열네 번", "두 달"): a number the book states must also be in the transcript.
-const NATIVE = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9, 열: 10, 열한: 11, 열두: 12, 열세: 13, 열네: 14, 열다섯: 15, 스무: 20 };
+const UNITS = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9 };
+const TENS = { 열: 10, 스물: 20, 스무: 20, 서른: 30, 마흔: 40, 쉰: 50, 예순: 60, 일흔: 70, 여든: 80, 아흔: 90 };
 const COUNTER = "회기|회차|차시|회|명|달|개월|번|년|살|세|시간|분|주|개";
-const NUMBER_RE = new RegExp(`(\\d+|열다섯|열한|열두|열세|열네|스무|다섯|여섯|일곱|여덟|아홉|한|두|세|네|열)\\s?(${COUNTER})`, "g");
+const NUMBER_RE = new RegExp(
+  `(?<![가-힣\\d,])(\\d{1,3}(?:,\\d{3})+|\\d+|(?:열|스물|스무|서른|마흔|쉰|예순|일흔|여든|아흔)(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉)?|다섯|여섯|일곱|여덟|아홉|한|두|세|네)(\\s?)(${COUNTER})`,
+  "g",
+);
+function nativeValue(word) {
+  for (const [t, v] of Object.entries(TENS)) if (word.startsWith(t)) return v + (UNITS[word.slice(t.length)] || 0);
+  return UNITS[word] || 0;
+}
 function numbersIn(textValue) {
   const out = new Set();
   for (const m of String(textValue).matchAll(NUMBER_RE)) {
-    const n = /\d/.test(m[1]) ? parseInt(m[1], 10) : NATIVE[m[1]];
-    if (n) out.add(n + m[2].replace(/회차|회기|차시/, "회").replace("개월", "달"));
+    if (m[1] === "한" && m[3] === "번" && !m[2]) continue; // 한번 = "once / for a try", not a count
+    const n = /\d/.test(m[1]) ? parseInt(m[1].replace(/,/g, ""), 10) : nativeValue(m[1]);
+    if (n) out.add(n + m[3].replace(/회차|회기|차시/, "회").replace("개월", "달"));
   }
   return out;
-}
-/** Standalone 뭐/이제/막 per 1,000 characters: high means the text still reads like raw speech. */
-function fillerDensity(paragraphsList) {
-  const all = paragraphsList.join(" ");
-  const n = (all.match(/(^|\s)(뭐|이제|막)(?=\s)/g) || []).length;
-  return all.length ? (n * 1000) / all.length : 0;
 }
 
 function numberMismatch(sentence, index) {
@@ -758,7 +784,9 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
     const fresh = sentences.filter((s) => {
       const key = s.replace(/[^가-힣a-zA-Z0-9]/g, "");
       if (key.length < 8) return true;
-      if (aboutMissing(s)) return false; // talk about what the record lacks
+      // Narration about what the interview record lacks; never applied to 구술 정리, where every
+      // sentence is the speaker's own words ("그 시기에는 내일 일을 알 수 없었어요").
+      if (settings.voice !== "oral" && /인터뷰|녹음|녹취|인터뷰어|기록에\s?남/.test(s) && aboutMissing(s)) return false;
       // Shown on its own page (맺는 말, epigraph): don't repeat it in a chapter.
       if (key.length >= 15 && reserved.some((r) => similarity(r, s) > 0.5)) return false;
       if (seen.has(key)) return false;

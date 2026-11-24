@@ -294,10 +294,16 @@
   }
 
   function lastWordsPage(book) {
+    // Skip a line identical to the epigraph, keeping each paragraph's real index so edits are
+    // saved to the right place.
     var ep = norm(book.epigraph);
-    var words = (book.lastWords || []).filter(function (w) { return !ep || norm(w) !== ep; });
+    var body = el("div", { className: "prose" });
+    (book.lastWords || []).forEach(function (w, i) {
+      if (ep && norm(w) === ep) return;
+      body.appendChild(txt("p", null, w, "lastWords." + i));
+    });
     var letter = el("div", { className: "letter" }, [
-      prose(words, "lastWords"),
+      body,
       book.subjectName ? el("p", { className: "letter__sign", text: "— " + book.subjectName }) : null,
     ]);
     return {
@@ -629,8 +635,17 @@
       setPath(book, path, e.target.textContent.trim());
       if (path === "title") top.querySelector(".reader__title").textContent = book.title;
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(function () { options.onChange(book); }, 400);
+      saveTimer = setTimeout(function () { saveTimer = null; options.onChange(book); }, 400);
     });
+    function flushSave() {
+      if (!saveTimer) return;
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      options.onChange(book);
+    }
+    window.addEventListener("pagehide", flushSave);
+    document.addEventListener("visibilitychange", function () { if (document.hidden) flushSave(); });
+    top.querySelector(".reader__home").addEventListener("click", flushSave);
     stage.addEventListener("paste", function (e) {
       if (!editing) return;
       e.preventDefault(); // paste as plain text only

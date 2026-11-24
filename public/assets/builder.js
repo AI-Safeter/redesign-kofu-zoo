@@ -193,6 +193,11 @@
 
   function setFile(file) {
     if (!file) return;
+    if (busy) {
+      $("file-info").textContent = "받아쓰기가 끝난 뒤에 다른 파일을 고를 수 있어요.";
+      $("file-info").hidden = false;
+      return;
+    }
     audioFile = file;
     tx = null;
     var mb = (file.size / 1024 / 1024).toFixed(1);
@@ -268,6 +273,7 @@
   async function transcribe() {
     if (!audioFile || busy) return;
     busy = true;
+    $("audio-file").disabled = true;
     $("transcribe-btn").disabled = true;
     $("transcribe-retry").hidden = true;
     $("make-btn").disabled = true;
@@ -310,6 +316,7 @@
       tx.altText = tx.alts ? join(tx.alts) : "";
       setTranscribeProgress(1, "받아쓰기 완료 · " + text.length.toLocaleString() + "자. 아래 2단계에서 확인해 주세요.");
       tx.done = true; // before delivering: proofreading starts right away and needs the second transcription
+      tx.prepared = { duration: tx.prepared.duration, chunks: [] }; // release the decoded audio
       deliverTranscript(text);
     } catch (e) {
       var got = tx ? tx.texts.filter(function (t) { return t != null; }).length : 0;
@@ -317,6 +324,7 @@
       $("transcribe-retry").hidden = !tx;
     } finally {
       busy = false;
+      $("audio-file").disabled = false;
       $("transcribe-btn").disabled = !audioFile || !config.transcription;
       $("make-btn").disabled = !config.writing;
     }
@@ -356,6 +364,7 @@
       return;
     }
     fixesBusy = true;
+    forgetUndo();
     $("fixes-find").disabled = true;
     $("fixes-list").textContent = "";
     $("fixes-apply").hidden = true;
@@ -398,7 +407,7 @@
       box.disabled = unknown;
       box.dataset.heard = f.heard;
       // Short, common words (e.g. "이젠") change only at the place shown, not everywhere.
-      box.dataset.at = f.heard.length <= 2 ? String(at) : "";
+      box.dataset.at = f.heard.length <= 2 ? String(current.indexOf(f.heard)) : "";
       box.dataset.meant = f.meant;
       var change = document.createElement("span");
       change.className = "fixes__change";
@@ -436,10 +445,19 @@
   }
 
   $("fixes-find").addEventListener("click", findFixes);
+  // Undo restores the transcript as it was before the last "고치기", and re-enables only that
+  // batch's items. Any later change to the transcript ends the chance to undo.
   var beforeFixes = null;
+  var lastBatch = [];
+  function forgetUndo() {
+    beforeFixes = null;
+    lastBatch = [];
+    $("fixes-undo").hidden = true;
+  }
   $("fixes-apply").addEventListener("click", function () {
     var box = $("transcript");
     beforeFixes = box.value;
+    lastBatch = [];
     var applied = 0;
     var words = 0;
     $("fixes-list").querySelectorAll("input:checked:not(:disabled)").forEach(function (c) {
@@ -458,10 +476,11 @@
         }
       }
       // Keep the list visible: applied items are greyed out, unticked ones can still be applied.
+      lastBatch.push(c);
       c.disabled = true;
       c.closest("li").classList.add("is-applied");
     });
-    onTranscriptInput();
+    onTranscriptInput(true);
     syncApply();
     $("fixes-status").textContent = words + "개 말을 " + applied + "곳에서 고쳤어요. 나머지도 한 번 훑어봐 주세요.";
     $("fixes-undo").hidden = false;
@@ -469,14 +488,12 @@
   $("fixes-undo").addEventListener("click", function () {
     if (beforeFixes == null) return;
     $("transcript").value = beforeFixes;
-    beforeFixes = null;
-    onTranscriptInput();
-    $("fixes-undo").hidden = true;
-    $("fixes-list").querySelectorAll("li.is-applied").forEach(function (li) {
-      li.classList.remove("is-applied");
-      var c = li.querySelector("input");
+    onTranscriptInput(true);
+    lastBatch.forEach(function (c) {
+      c.closest("li").classList.remove("is-applied");
       if (c.dataset.meant !== "?") c.disabled = false;
     });
+    forgetUndo();
     syncApply();
     $("fixes-status").textContent = "고치기 전으로 되돌렸어요.";
   });
@@ -492,13 +509,14 @@
   });
 
   var draftTimer;
-  function onTranscriptInput() {
+  function onTranscriptInput(fromFixes) {
+    if (fromFixes !== true) forgetUndo(); // typing, replacing or a new transcript ends undo
     var v = $("transcript").value;
     $("transcript-count").textContent = v.length.toLocaleString() + "자" + (v.length && v.length < 200 ? " · 책을 만들려면 200자 이상 필요해요" : "");
     clearTimeout(draftTimer);
     draftTimer = setTimeout(function () { sset(localStorage, DRAFT_KEY, v); }, 500);
   }
-  $("transcript").addEventListener("input", onTranscriptInput);
+  $("transcript").addEventListener("input", function () { onTranscriptInput(); });
 
   $("replace-btn").addEventListener("click", function () {
     var from = $("replace-from").value;
@@ -572,6 +590,13 @@
       return;
     }
     sset(sessionStorage, ACCESS_KEY, $("access").value.trim());
+
+    var unfinished = null;
+    try { unfinished = JSON.parse(sget(localStorage, JOB_KEY) || "null"); } catch (err) {}
+    if (unfinished && unfinished.outline && (!job || job.id !== unfinished.id)) {
+      if (!confirm("만들다 만 책 《" + unfinished.outline.title + "》이 있어요. 새 책을 만들면 그 책은 사라집니다. 계속할까요?")) return;
+    }
+    $("resume").hidden = true;
 
     job = {
       id: Library.newId(),
@@ -680,6 +705,7 @@
   }
 
   async function runJob() {
+    var finished = false;
     job.failed = false;
     setBusyUi(true);
     showError("");
@@ -764,6 +790,7 @@
       updateOverall("완성! 책을 펼칩니다");
       $("overall-bar").style.width = "100%";
       dropJob();
+      finished = true;
       setTimeout(function () { location.href = "/book?id=" + encodeURIComponent(book.id); }, 700);
     } catch (err) {
       job.failed = true;
@@ -773,6 +800,8 @@
     } finally {
       clearInterval(ticker);
       if (job) saveJob();
+      // After success the page is about to open the book: keep the controls hidden.
+      if (finished) return;
       setBusyUi(false);
       if (job && job.failed) $("retry-btn").focus();
     }
@@ -851,6 +880,7 @@
       $("resume-text").textContent = "만들던 책 《" + saved.outline.title + "》이 있어요 (" + done + "/" + saved.outline.chapters.length + "장 완료). 이어서 쓸까요?";
       $("resume").hidden = false;
       $("resume-go").onclick = function () {
+        if (busy) return;
         $("resume").hidden = true;
         job = saved;
         job.chapters = job.chapters || [];

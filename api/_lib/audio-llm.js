@@ -60,7 +60,10 @@ function clean(text) {
     .trim();
 }
 
-const REFUSAL = /^(죄송|I'?m sorry|I can(no|')t|Sorry)/i;
+// A refusal is a short reply about the task itself, not speech that happens to start with 죄송.
+const REFUSAL = /^(죄송|I'?m sorry|I can(no|')t|Sorry|Unfortunately)/i;
+const ABOUT_TASK = /오디오|음성|녹음|받아\s?적|전사|들리지|도와\s?드릴|제공|transcri|audio|assist/i;
+const isRefusal = (t) => REFUSAL.test(t) && t.length < 120 && ABOUT_TASK.test(t);
 
 /**
  * Transcribes one chunk, trying each audio model in turn. Throws when none gives usable text
@@ -77,7 +80,8 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
     try {
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        signal,
+        // A hung model must not use up the whole function time before the fallbacks get a turn.
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(80_000)]) : AbortSignal.timeout(80_000),
         headers: {
           authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "content-type": "application/json",
@@ -107,7 +111,7 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
       const text = clean(choice?.message?.content);
       const chars = text.replace(/\s/g, "").length;
       // Reject refusals, empty answers for real audio, and answers cut off by the length limit.
-      if (REFUSAL.test(text)) throw new Error(`${model}: refused`);
+      if (isRefusal(text)) throw new Error(`${model}: refused`);
       if (seconds && seconds > 20 && chars < seconds * 0.5) throw new Error(`${model}: too little text (${chars} chars for ${Math.round(seconds)} s)`);
       if (choice?.finish_reason === "length") throw new Error(`${model}: cut off`);
       return { text, model };

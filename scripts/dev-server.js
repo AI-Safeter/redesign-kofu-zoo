@@ -43,15 +43,25 @@ async function handleApi(req, res, name) {
     return;
   }
   const body = ["GET", "HEAD"].includes(req.method) ? undefined : Readable.toWeb(req);
+  // Abort the handler's work when the browser goes away, as Vercel does.
+  const abort = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) abort.abort();
+  });
   const request = new Request(`http://localhost:${PORT}${req.url}`, {
     method: req.method,
     headers: req.headers,
     body,
     duplex: "half",
+    signal: abort.signal,
   });
   const response = await handler(request);
   res.writeHead(response.status, Object.fromEntries(response.headers));
-  if (response.body) Readable.fromWeb(response.body).pipe(res);
+  if (response.body) {
+    const stream = Readable.fromWeb(response.body);
+    res.on("close", () => stream.destroy()); // cancels the web stream too
+    stream.pipe(res);
+  }
   else res.end();
 }
 

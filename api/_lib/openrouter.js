@@ -53,6 +53,8 @@ export function extractJson(text) {
 export async function callOpenRouter(args) {
   let list = healthy(models());
   for (;;) {
+    // Don't start another model when the function is about to run out of time.
+    if (args.deadline && args.deadline - Date.now() < 20_000) throw Object.assign(new Error("시간이 부족합니다. 다시 시도해 주세요."), { status: 504 });
     try {
       return await attempt({ ...args, models: list });
     } catch (err) {

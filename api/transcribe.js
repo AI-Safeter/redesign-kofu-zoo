@@ -65,12 +65,12 @@ export async function POST(request) {
     try {
       // The second model runs at the same time; its text only feeds the proofreading step.
       const second = checkModel();
-      const [main, alt] = await Promise.all([
-        transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal }),
-        second
-          ? transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal, only: second }).catch(() => null)
-          : null,
-      ]);
+      const altPromise = second
+        ? transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal, only: second }).catch(() => null)
+        : Promise.resolve(null);
+      const main = await transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal });
+      // The second opinion only helps proofreading: wait at most 20 s more for it.
+      const alt = await Promise.race([altPromise, new Promise((r) => setTimeout(() => r(null), 20_000))]);
       const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
       return json({ text: tidy(main.text), engine: main.model, alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
     } catch (err) {
@@ -82,14 +82,14 @@ export async function POST(request) {
     return errorResponse("음성 인식용 API 키가 서버에 설정되지 않았습니다. 녹취록을 직접 붙여넣어 주세요.", 500);
   }
 
-  const first = await recognize(provider, { audio, type, name, model: provider.model(), prompt: hint });
+  const first = await recognize(provider, { audio, type, name, model: provider.model(), prompt: hint, signal: request.signal });
   if (first.error) return first.error;
   let best = first;
 
   // Whisper sometimes skips speech (one long segment with very little text) or loops.
   // Try again once without the hint, on the alternative model where there is one.
   if (suspicious(first.segments)) {
-    const second = await recognize(provider, { audio, type, name, model: provider.altModel?.() || provider.model(), prompt: "" });
+    const second = await recognize(provider, { audio, type, name, model: provider.altModel?.() || provider.model(), prompt: "", signal: request.signal });
     if (!second.error && score(second) > score(first)) best = second;
   }
   return json({ text: buildText(best), engine: provider.name });
@@ -111,7 +111,7 @@ function paragraphs(text) {
   return out;
 }
 
-async function recognize(provider, { audio, type, name, model, prompt }) {
+async function recognize(provider, { audio, type, name, model, prompt, signal }) {
   const verbose = !/gpt-4o/.test(model); // gpt-4o transcription models only return plain JSON
   const form = new FormData();
   form.append("file", new Blob([audio], { type }), name);
@@ -126,6 +126,7 @@ async function recognize(provider, { audio, type, name, model, prompt }) {
       method: "POST",
       headers: { authorization: `Bearer ${process.env[provider.keyEnv]}` },
       body: form,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
     });
   } catch (err) {
     console.error(`${provider.name} unreachable`, err);
@@ -146,7 +147,12 @@ async function recognize(provider, { audio, type, name, model, prompt }) {
       res.status === 401 ? `${provider.name} API 키가 올바르지 않습니다.` : `음성 인식에 실패했습니다 (${provider.name} ${res.status}).`;
     return { error: errorResponse(message, 502) };
   }
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    return { error: errorResponse(`음성 인식 결과를 읽지 못했습니다 (${provider.name}). 다시 시도해 주세요.`, 502) };
+  }
   return { text: String(data.text || "").trim(), segments: Array.isArray(data.segments) ? data.segments : null };
 }
 
@@ -205,7 +211,10 @@ function buildText(result) {
   return out.trim();
 }
 
-/** "연극공간의 연극공간 연극공간의 연극공간" → "연극공간의 연극공간": a phrase of 1–4 words said 3+ times in a row is a loop. */
+/**
+ * Collapses a loop: a phrase of 1–4 words said three or more times in a row ("네 네 네 네" →
+ * "네"). Two repeats are kept, since Korean doubles on purpose ("한 명 한 명", "한 걸음 한 걸음").
+ */
 function collapseRepeats(text) {
-  return text.replace(/(\S+(?:\s+\S+){0,3}?)(?:\s+\1){2,}/g, "$1").replace(/((\S+\s+\S+))\s+\2(?=\s|$)/g, "$1");
+  return text.replace(/(^|\s)(\S+(?:\s+\S+){0,3}?)(?:\s+\2){2,}(?=\s|$)/g, "$1$2");
 }
