@@ -387,10 +387,15 @@
       var ins = document.createElement("ins");
       ins.textContent = unknown ? "? (녹음을 듣고 직접 고쳐 주세요)" : f.meant;
       change.append(del, " → ", ins);
+      var count = current.split(f.heard).length - 1;
+      var at = current.indexOf(f.heard);
+      var ctx = document.createElement("span");
+      ctx.className = "fixes__why";
+      ctx.textContent = "…" + current.slice(Math.max(0, at - 18), at).replace(/\s+/g, " ") + "［" + f.heard + "］" + current.slice(at + f.heard.length, at + f.heard.length + 18).replace(/\s+/g, " ") + "…" + (count > 1 ? " (" + count + "곳)" : "");
       var why = document.createElement("span");
       why.className = "fixes__why";
       why.textContent = (f.kind === "number" ? "숫자 · 꼭 확인 — " : f.kind === "term" ? "이름·용어 — " : "") + f.why;
-      label.append(box, change, why);
+      label.append(box, change, ctx, why);
       li.appendChild(label);
       list.appendChild(li);
     });
@@ -398,8 +403,10 @@
   }
 
   $("fixes-find").addEventListener("click", findFixes);
+  var beforeFixes = null;
   $("fixes-apply").addEventListener("click", function () {
     var box = $("transcript");
+    beforeFixes = box.value;
     var applied = 0;
     $("fixes-list").querySelectorAll("input:checked").forEach(function (c) {
       var n = box.value.split(c.dataset.heard).length - 1;
@@ -412,6 +419,15 @@
     $("fixes-list").textContent = "";
     $("fixes-apply").hidden = true;
     $("fixes-status").textContent = applied + "곳을 고쳤어요. 나머지도 한 번 훑어봐 주세요.";
+    $("fixes-undo").hidden = false;
+  });
+  $("fixes-undo").addEventListener("click", function () {
+    if (beforeFixes == null) return;
+    $("transcript").value = beforeFixes;
+    beforeFixes = null;
+    onTranscriptInput();
+    $("fixes-undo").hidden = true;
+    $("fixes-status").textContent = "고치기 전으로 되돌렸어요.";
   });
   $("merge-replace").addEventListener("click", function () {
     $("transcript").value = pendingText || "";
@@ -540,7 +556,10 @@
     job.steps = { outline: stepItem("이야기의 흐름을 읽고 목차를 짜는 중"), chapters: [] };
     if (job.outline) {
       job.steps.outline.set("done", "");
-      job.steps.outline.label("목차 완성: 《" + job.outline.title + "》");
+      job.steps.outline.label(
+        "목차 완성: 《" + job.outline.title + "》" +
+        (job.outline.chapters.length < job.settings.chapters ? " · 녹음 분량에 맞춰 " + job.outline.chapters.length + "장으로 지었어요" : "")
+      );
       job.steps.chapters = job.outline.chapters.map(function (c, i) {
         var s = stepItem("제" + (i + 1) + "장 " + c.title);
         if (job.chapters[i]) s.set("done", "");
@@ -550,11 +569,17 @@
   }
 
   function updateOverall(status) {
+    // The outline is a fixed 20% of the bar and the chapters share the rest, so the bar never
+    // goes backwards when the outline turns out to have more chapters than guessed.
     var total = 1 + (job.outline ? job.outline.chapters.length : 3);
     var done = (job.outline ? 1 : 0) + job.chapters.filter(Boolean).length;
-    // While the outline is being written, creep forward so the bar doesn't sit at 0 for minutes.
-    var partial = !job.outline && job.runStarted ? Math.min(0.8, (Date.now() - job.runStarted) / 120000) : 0;
-    var pct = Math.round(((done + partial) / total) * 100);
+    var pct;
+    if (!job.outline) {
+      pct = Math.round(20 * Math.min(0.9, job.runStarted ? (Date.now() - job.runStarted) / 120000 : 0));
+    } else {
+      var n = job.outline.chapters.length;
+      pct = Math.round(20 + (80 * job.chapters.filter(Boolean).length) / Math.max(1, n));
+    }
     $("overall-bar").style.width = pct + "%";
     $("overall-bar").parentNode.setAttribute("aria-valuenow", String(pct));
     if (status) $("overall-status").textContent = status;
@@ -626,9 +651,6 @@
         job.chapters = new Array(job.outline.chapters.length);
         saveJob();
         renderSteps();
-        if (job.outline.chapters.length < job.settings.chapters) {
-          job.steps.outline.label("목차 완성: 《" + job.outline.title + "》 · 녹음 분량에 맞춰 " + job.outline.chapters.length + "장으로 지었어요");
-        }
       }
 
       // 2) Chapters not written yet

@@ -219,15 +219,18 @@
       }
       if (quoteAfter < 0) quoteOpens = true;
       // In 구술 정리 the body already is the speaker's words: don't print them twice.
-      if (quoteAfter >= 0 && book.settings && book.settings.voice === "oral") q = null;
+      if (quoteAfter >= 0 && book.settings && book.settings.voice === "oral") {
+        q = null;
+        quoteAfter = -1;
+      }
     }
 
     var body = el("div", { className: "prose" });
     paras.forEach(function (p, j) {
       body.appendChild(txt("p", j === 0 ? "lead" : null, p, "chapters." + i + ".paragraphs." + j));
-      if (j === quoteAfter && j < paras.length - 1) body.appendChild(pullQuote(q, i));
+      if (q && j === quoteAfter && j < paras.length - 1) body.appendChild(pullQuote(q, i));
     });
-    if (quoteAfter === paras.length - 1 && paras.length > 0) body.appendChild(pullQuote(q, i));
+    if (q && quoteAfter === paras.length - 1 && paras.length > 0) body.appendChild(pullQuote(q, i));
 
     var meta = [yearsOf(c), agesOf(book, c), c.place].filter(Boolean);
     var head = el("header", { className: "chapter__head" }, [
@@ -264,7 +267,7 @@
     return {
       kind: "chapter",
       label: chapterLabel(i) + " " + c.title,
-      node: el("div", null, [check, head, quoteOpens ? pullQuote(q, i, true) : null, body, excerpt]),
+      node: el("div", null, [check, head, q && quoteOpens ? pullQuote(q, i, true) : null, body, excerpt]),
     };
   }
 
