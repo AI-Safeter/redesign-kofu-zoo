@@ -16,6 +16,8 @@ import { indexTranscript, isFromTranscript, quotedSpans, similarity, support } f
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 const EFFORT = process.env.CLAUDE_EFFORT || "high";
 const MAX_TRANSCRIPT_CHARS = 400_000;
+// The most chapters a book can have; the interview's length usually sets fewer (chapterLimit).
+const MAX_CHAPTERS = 12;
 
 /**
  * "anthropic" (Claude through Anthropic's own API), "gateway" (Nous Portal and/or OpenRouter),
@@ -58,7 +60,7 @@ export function readSettings(body) {
       // Spellings of names and terms in the recording (the same hint the transcription uses).
       terms: clip(s.terms, 300),
       // The most chapters to write; the outline may use fewer when the interview is short.
-      chapters: Math.min(8, Math.max(1, parseInt(s.chapters, 10) || 6)),
+      chapters: Math.min(MAX_CHAPTERS, Math.max(1, parseInt(s.chapters, 10) || MAX_CHAPTERS)),
     },
   };
 }
@@ -396,7 +398,7 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
   const started = Date.now();
   const deadline = started + FUNCTION_BUDGET_MS;
   const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal?.aborted;
-  outline = normalizeOutline(outline, null, 8, settings); // the browser sends it back; never trust its shape
+  outline = normalizeOutline(outline, null, MAX_CHAPTERS, settings); // the browser sends it back; never trust its shape
   if (!outline.chapters[chapterIndex]) throw fail("잘못된 장 번호입니다.", 400);
   const transcriptIndex = indexWithNumbers(transcript);
   const plan = outline.chapters[chapterIndex];

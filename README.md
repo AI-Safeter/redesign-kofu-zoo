@@ -74,7 +74,7 @@ book JSON saved in localStorage ─▶ /book?id=… reader (page turning, edit m
 
 ## Rough cost per book
 
-For a 1-hour interview: transcription costs about $0.02 with Qwen 3.8 Omni Flash (or nothing on Groq's free Whisper fallback, which allows about 2 hours of audio per hour: 7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. With OpenRouter's free models, writing is free too (free models allow about 20 requests a minute; one book uses 6–9). Free models are good but noticeably weaker writers than Claude, and they are sometimes busy, in which case the next model in the list is used. With Claude, writing is 1 outline call plus 5–8 chapter calls on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
+For a 1-hour interview: transcription costs about $0.02 with Qwen 3.8 Omni Flash (or nothing on Groq's free Whisper fallback, which allows about 2 hours of audio per hour: 7,200 audio seconds/hour, 20 requests/minute). Very long recordings simply pause and resume while transcribing. With OpenRouter's free models, writing is free too (free models allow about 20 requests a minute; one book uses 3–13). Free models are good but noticeably weaker writers than Claude, and they are sometimes busy, in which case the next model in the list is used. With Claude, writing is 1 outline call plus one call per chapter (up to 12; the interview length decides) on Claude Opus 5.5 ($4 / $20 per million input/output tokens, cached input $0.20), roughly $1–2 depending on transcript length and effort level.
 
 ## Run locally
 

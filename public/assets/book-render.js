@@ -492,6 +492,38 @@
     }
 
 
+    // ----- Replace all (while editing): a misheard name usually appears in many places -----
+    var findIn = el("input", { type: "text", placeholder: "찾을 말", "aria-label": "찾을 말" });
+    var replaceIn = el("input", { type: "text", placeholder: "바꿀 말", "aria-label": "바꿀 말" });
+    var replaceDone = el("span", { className: "reader__replace-done", role: "status" });
+    var replaceBar = options.onChange
+      ? el("form", { className: "reader__replace", hidden: "hidden" }, [findIn, el("span", { "aria-hidden": "true", text: "→" }), replaceIn, el("button", { type: "submit", className: "btn", text: "모두 바꾸기" }), replaceDone])
+      : null;
+    if (replaceBar) {
+      replaceBar.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var from = findIn.value;
+        if (!from) return;
+        var count = 0;
+        var seen = {};
+        stage.querySelectorAll("[data-path]").forEach(function (n) {
+          if (n.textContent.indexOf(from) < 0) return;
+          var path = n.getAttribute("data-path");
+          if (!seen[path]) count += n.textContent.split(from).length - 1;
+          seen[path] = true;
+          n.textContent = n.textContent.split(from).join(replaceIn.value);
+          setPath(book, path, n.textContent.trim());
+        });
+        // Fields that are not on any page still feed the saved file's plain-text version.
+        ["subjectName", "speakerRole"].forEach(function (k) {
+          if (book[k]) book[k] = String(book[k]).split(from).join(replaceIn.value);
+        });
+        top.querySelector(".reader__title").textContent = book.title || "";
+        replaceDone.textContent = count + "곳";
+        if (count) options.onChange(book);
+      });
+    }
+
     // ----- Pages -----
     var stage = el("main", { className: "reader__stage" });
     pages.forEach(function (p, i) {
@@ -514,7 +546,7 @@
 
     root.textContent = "";
     root.className = "reader";
-    [top, panel, bar, stage, bottom].forEach(function (n) { root.appendChild(n); });
+    [top, panel, replaceBar, bar, stage, bottom].forEach(function (n) { if (n) root.appendChild(n); });
 
     var sections = stage.querySelectorAll(".page");
 
@@ -625,6 +657,10 @@
       editing = on;
       root.classList.toggle("is-editing", on);
       if (editBtn) editBtn.textContent = on ? "고치기 끝" : "글 고치기";
+      if (replaceBar) {
+        replaceBar.hidden = !on;
+        replaceDone.textContent = "";
+      }
       stage.querySelectorAll("[data-path]").forEach(function (n) {
         if (on) n.setAttribute("contenteditable", "plaintext-only");
         else n.removeAttribute("contenteditable");

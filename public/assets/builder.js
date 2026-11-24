@@ -432,10 +432,7 @@
     if (job.transcript) job.steps.transcribe.set("done", "");
     if (job.outline) {
       job.steps.outline.set("done", "");
-      job.steps.outline.label(
-        "목차 완성: 《" + job.outline.title + "》" +
-        (job.outline.chapters.length < job.settings.chapters ? " · 녹음 분량에 맞춰 " + job.outline.chapters.length + "장으로 지었어요" : "")
-      );
+      job.steps.outline.label("목차 완성: 《" + job.outline.title + "》");
       job.steps.chapters = job.outline.chapters.map(function (c, i) {
         var s = stepItem("제" + (i + 1) + "장 " + c.title);
         if (job.chapters[i]) s.set("done", "");
