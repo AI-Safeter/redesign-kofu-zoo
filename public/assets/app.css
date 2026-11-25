@@ -11,7 +11,7 @@
   --well: #f3f3f4;          /* drop area */
   --ink: #18181b;
   --ink-2: #3f3f46;
-  --ink-3: #6b6b74;         /* hints, meta, placeholders */
+  --ink-3: #6b6b74;         /* hints, meta */
   --line: #e6e6e9;          /* hairlines */
   --field: #d4d4d8;         /* field borders */
   --primary: #0b6bcb;
@@ -106,7 +106,6 @@ input[type="text"], input[type="password"], select {
   width: 100%;
   min-width: 0;
 }
-input::placeholder { color: var(--ink-3); }
 input:focus, select:focus { outline: 2px solid transparent; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
@@ -257,3 +256,8 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* The access code, asked once on the first visit */
+.gate { border: 0; border-radius: 12px; padding: 24px; width: min(360px, calc(100% - 32px)); background: var(--page); color: var(--ink); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2); }
+.gate::backdrop { background: rgba(0, 0, 0, 0.45); }
+.gate .primary { width: 100%; }

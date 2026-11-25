@@ -13,6 +13,7 @@
   var CHAPTER_CONCURRENCY = 3;
 
   var config = { accessCodeRequired: false, transcription: true, writing: true };
+  var accessCode = sget(ACCESS_KEY) || ""; // asked once, on the first visit
   var audioFile = null;
   var busy = false;
   var tx = null; // the current transcription: { id, file, hint, prepared, texts, alts }
@@ -30,8 +31,7 @@
 
   function headers(extra) {
     var h = Object.assign({}, extra);
-    var code = $("access").value.trim();
-    if (code) h["x-access-code"] = encodeURIComponent(code); // header values must be ASCII
+    if (accessCode) h["x-access-code"] = encodeURIComponent(accessCode); // header values must be ASCII
     return h;
   }
 
@@ -336,12 +336,6 @@
       $("audio-file").focus();
       return;
     }
-    if (config.accessCodeRequired && !$("access").value.trim()) {
-      showError("접근 코드를 입력해 주세요.");
-      $("access").focus();
-      return;
-    }
-    sset(ACCESS_KEY, $("access").value.trim()); // remembered on this device
 
     // Long recordings can crash a phone's browser while decoding.
     if (coarsePointer && !(tx && tx.file === audioFile)) {
@@ -653,6 +647,37 @@
   }, { rootMargin: "-30% 0px -60% 0px" });
   document.querySelectorAll(".step").forEach(function (s) { steps.observe(s); });
 
+  // Shown until the right code is entered; the code is then remembered on this device.
+  function askAccessCode() {
+    var gate = $("gate");
+    gate.addEventListener("cancel", function (e) { e.preventDefault(); });
+    gate.showModal();
+    return new Promise(function (resolve) {
+      $("gate-form").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var code = $("gate-code").value.trim();
+        var btn = e.target.querySelector("button");
+        btn.disabled = true;
+        var c = null;
+        try {
+          var res = await fetch("/api/config", { headers: { "x-access-code": encodeURIComponent(code) } });
+          if (res.ok) c = await res.json();
+        } catch (err) {}
+        btn.disabled = false;
+        if (c && c.accessOk) {
+          accessCode = code;
+          sset(ACCESS_KEY, code);
+          gate.close();
+          resolve(c);
+          return;
+        }
+        $("gate-error").textContent = c ? "접근 코드가 올바르지 않아요." : "연결할 수 없어요. 다시 시도해 주세요.";
+        $("gate-error").hidden = false;
+        $("gate-code").select();
+      });
+    });
+  }
+
   async function init() {
     renderLibrary();
     try {
@@ -664,10 +689,9 @@
       }
     } catch (e) {}
     restoreSavedWork();
-    $("access").value = sget(ACCESS_KEY) || "";
 
     try {
-      var res = await fetch("/api/config");
+      var res = await fetch("/api/config", { headers: headers() });
       if (!res.ok) throw new Error();
       config = await res.json();
     } catch (e) {
@@ -675,7 +699,7 @@
       showNotice(["지금은 책 만들기 기능에 연결할 수 없어요."]);
       console.warn("API not reachable: deploy with server functions (e.g. Vercel).");
     }
-    $("access-field").hidden = !config.accessCodeRequired;
+    if (config.accessOk === false) config = await askAccessCode();
     var problems = [];
     if (!config.transcription) {
       problems.push("지금은 녹음 받아쓰기를 쓸 수 없어요.");
