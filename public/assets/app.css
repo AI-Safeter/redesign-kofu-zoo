@@ -50,53 +50,16 @@ body {
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---------- Shell ---------- */
-.side {
-  padding-block: 12px 8px;
+.side, .main {
   padding-left: max(20px, env(safe-area-inset-left, 0px));
   padding-right: max(20px, env(safe-area-inset-right, 0px));
 }
+.side { padding-block: 12px 8px; }
 .side__brand { margin: 0; font: inherit; }
 .brand { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ink); text-decoration: none; font-weight: 700; letter-spacing: -0.02em; }
 .steps-nav { display: none; }
 
-.main {
-  padding-block: 8px 48px;
-  padding-left: max(20px, env(safe-area-inset-left, 0px));
-  padding-right: max(20px, env(safe-area-inset-right, 0px));
-}
-
-@media (min-width: 1024px) {
-  .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
-  .side {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-    background: var(--side);
-    border-right: 1px solid var(--line);
-    padding: 20px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
-  }
-  .side__brand { padding: 0 8px; }
-  .steps-nav { display: grid; gap: 2px; }
-  .steps-nav a {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px;
-    border-radius: 6px;
-    color: var(--ink-2);
-    font-size: 0.94rem;
-    text-decoration: none;
-  }
-  .steps-nav a:hover { background: var(--well); color: var(--ink); }
-  .steps-nav a span { width: 20px; color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: center; }
-  .steps-nav a[aria-current] { background: var(--page); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
-  .steps-nav a[aria-current] span { color: var(--primary); }
-  .main { padding: 40px 56px 64px; max-width: 1000px; }
-}
+.main { padding-block: 8px 48px; }
 
 /* ---------- Library (sidebar on wide screens) ---------- */
 .shelf { margin: 8px 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
@@ -109,10 +72,6 @@ body {
 .library__meta { display: block; font-size: 0.8rem; color: var(--ink-3); }
 .library a.library__open:hover .library__name { text-decoration: underline; text-underline-offset: 3px; }
 .library__actions { display: flex; gap: 6px; }
-@media (min-width: 1024px) {
-  .shelf { margin: 0; padding: 0 8px; border: 0; }
-  .library__actions .btn { min-height: 32px; padding: 4px 10px; font-size: 0.8rem; }
-}
 
 /* ---------- Sections ---------- */
 .form-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -121,12 +80,6 @@ body {
 .step:first-child { border-top: 0; padding-top: 8px; }
 .step__title { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; font-size: 1.2rem; font-weight: 700; letter-spacing: -0.025em; scroll-margin-top: 24px; }
 .step__num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: var(--ink); color: var(--page); font-size: 0.78rem; font-weight: 700; }
-@media (min-width: 1024px) {
-  .step { padding-block: 40px; }
-  .step:first-child { padding-top: 0; }
-  .step__title { font-size: 1.35rem; }
-  .step__num { display: none; } /* the sidebar already numbers the steps */
-}
 
 /* ---------- Messages ---------- */
 .notice, .banner { background: var(--primary-tint); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.95rem; }
@@ -158,7 +111,6 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
-@media (min-width: 1024px) { #hint { max-width: 36em; } }
 
 /* Writing style */
 .choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -196,7 +148,6 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 .file-info { margin: 0 0 18px; font-size: 0.92rem; color: var(--ink-2); word-break: break-all; }
 .file-info.is-error { color: var(--danger); font-weight: 500; }
 #tx-resume { margin: 0 0 16px; font-size: 0.92rem; }
-@media (min-width: 1024px) { .dropzone { padding: 44px 24px; } }
 
 /* ---------- Buttons ---------- */
 .primary {
@@ -222,9 +173,8 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
   min-height: 44px;
   cursor: pointer;
 }
-.btn:hover:not(:disabled) { background: var(--well); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: var(--danger-tint); }
+.btn:hover { background: var(--well); }
+.btn--danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-tint); }
 .link-btn { display: block; margin: 8px auto 0; background: none; border: 0; color: var(--ink-3); font: 0.92rem var(--font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 44px; }
 .link-btn:hover { color: var(--ink); }
 
@@ -234,12 +184,6 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 
 /* ---------- Main action & book progress ---------- */
 .actions { padding-top: 24px; border-top: 1px solid var(--line); }
-@media (min-width: 1024px) {
-  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
-  .actions .error { flex-basis: 100%; }
-  .primary--big { width: auto; padding: 14px 36px; }
-  .make-progress .link-btn { margin-left: 0; }
-}
 
 .make-progress { margin-top: 24px; max-width: 46em; scroll-margin-top: 24px; }
 .overall { margin-bottom: 16px; }
@@ -259,6 +203,56 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 .make-steps li.is-failed .dot { border-color: var(--danger); color: var(--danger); }
 .make-steps li.is-failed .dot::before { content: "!"; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Wide screens: sidebar beside the form ---------- */
+@media (min-width: 1024px) {
+  .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
+  .side {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--side);
+    border-right: 1px solid var(--line);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .side__brand { padding: 0 8px; }
+  .steps-nav { display: grid; gap: 2px; }
+  .steps-nav a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 6px;
+    color: var(--ink-2);
+    font-size: 0.94rem;
+    text-decoration: none;
+  }
+  .steps-nav a:hover { background: var(--well); color: var(--ink); }
+  .steps-nav a span { width: 20px; color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: center; }
+  .steps-nav a[aria-current] { background: var(--page); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+  .steps-nav a[aria-current] span { color: var(--primary); }
+  .main { padding: 40px 56px 64px; max-width: 1000px; }
+
+  .shelf { margin: 0; padding: 0 8px; border: 0; }
+  .library__actions .btn { min-height: 32px; padding: 4px 10px; font-size: 0.8rem; }
+
+  .step { padding-block: 40px; }
+  .step:first-child { padding-top: 0; }
+  .step__title { font-size: 1.35rem; }
+  .step__num { display: none; } /* the sidebar already numbers the steps */
+
+  #hint { max-width: 36em; }
+  .dropzone { padding: 44px 24px; }
+
+  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
+  .actions .error { flex-basis: 100%; }
+  .primary--big { width: auto; padding: 14px 36px; }
+  .make-progress .link-btn { margin-left: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

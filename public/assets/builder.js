@@ -1,5 +1,5 @@
 /*
- * Builder page: audio → transcript (reviewed by the user) → outline → chapters → saved book.
+ * Builder page: audio → transcript (auto-corrected) → outline → chapters → saved book.
  * A book in progress is saved after every step, so a reload or a failed chapter never
  * throws away work that is already done.
  */
@@ -15,8 +15,9 @@
   var config = { accessCodeRequired: false, transcription: true, writing: true };
   var audioFile = null;
   var busy = false;
-  var tx = null; // the current transcription: { id, file, hint, prepared, total, texts, alts }
-  var job = null; // the current book: { id, transcript, settings, outline, chapters, startedAt }
+  var tx = null; // the current transcription: { id, file, hint, prepared, texts, alts }
+  var job = null; // the current book: { id, transcript, settings, outline, chapters }
+  var steps = null; // the progress list's items for the current run
 
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
@@ -128,40 +129,23 @@
     $("library").hidden = books.length === 0;
     books.forEach(function (b) {
       var li = document.createElement("li");
-      var a = document.createElement("a");
-      a.className = "library__open";
-      a.href = "/book?id=" + encodeURIComponent(b.id);
-      var name = document.createElement("span");
-      name.className = "library__name";
-      name.textContent = b.title + (b.subtitle ? " — " + b.subtitle : "");
-      var meta = document.createElement("span");
-      meta.className = "library__meta";
-      meta.textContent = b.chapters + "장 · " + new Date(b.updatedAt).toLocaleDateString("ko-KR");
-      a.append(name, meta);
-
-      var actions = document.createElement("div");
-      actions.className = "library__actions";
-      var dl = document.createElement("button");
-      dl.type = "button";
-      dl.className = "btn";
-      dl.textContent = "파일로 저장";
-      dl.addEventListener("click", function () {
+      li.innerHTML = '<a class="library__open"><span class="library__name"></span><span class="library__meta"></span></a>' +
+        '<div class="library__actions"><button type="button" class="btn">파일로 저장</button><button type="button" class="btn btn--danger">삭제</button></div>';
+      li.querySelector("a").href = "/book?id=" + encodeURIComponent(b.id);
+      li.querySelector(".library__name").textContent = b.title + (b.subtitle ? " — " + b.subtitle : "");
+      li.querySelector(".library__meta").textContent = b.chapters + "장 · " + new Date(b.updatedAt).toLocaleDateString("ko-KR");
+      var buttons = li.querySelectorAll("button");
+      buttons[0].onclick = function () {
         var book = Library.get(b.id);
         if (book) Library.download(book).catch(function (e) { showNotice([e.message]); });
-      });
-      var del = document.createElement("button");
-      del.type = "button";
-      del.className = "btn btn--danger";
-      del.textContent = "삭제";
-      del.setAttribute("aria-label", b.title + " 삭제");
-      del.addEventListener("click", function () {
+      };
+      buttons[1].setAttribute("aria-label", b.title + " 삭제");
+      buttons[1].onclick = function () {
         if (confirm("‘" + b.title + "’ 책을 삭제할까요? 되돌릴 수 없습니다.")) {
           Library.remove(b.id);
           renderLibrary();
         }
-      });
-      actions.append(dl, del);
-      li.append(a, actions);
+      };
       ul.appendChild(li);
     });
   }
@@ -171,33 +155,27 @@
   var MEDIA_NAME = /\.(mp3|m4a|mp4|aac|wav|ogg|oga|opus|flac|webm|mov|amr|3gp|wma)$/i;
   function setFile(file) {
     if (!file || busy) return; // the picker is disabled while transcribing; ignore drops too
-    if (!file.size) {
-      showFileProblem("빈 파일이에요. 녹음 파일을 다시 골라 주세요.");
-      return;
-    }
+    if (!file.size) return showFileInfo("빈 파일이에요. 녹음 파일을 다시 골라 주세요.", true);
     if (!/^(audio|video)\//.test(file.type) && !MEDIA_NAME.test(file.name)) {
-      showFileProblem("녹음(오디오)이나 동영상 파일을 골라 주세요. ‘" + file.name + "’은(는) 녹음 파일이 아니에요.");
-      return;
+      return showFileInfo("녹음(오디오)이나 동영상 파일을 골라 주세요. ‘" + file.name + "’은(는) 녹음 파일이 아니에요.", true);
     }
     audioFile = file;
     tx = null;
-    $("file-info").classList.remove("is-error");
-    $("file-info").textContent = "선택한 파일: " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + "MB)";
-    $("file-info").hidden = false;
+    showFileInfo("선택한 파일: " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + "MB)", false);
   }
 
-  function showFileProblem(msg) {
+  function showFileInfo(msg, isError) {
     $("file-info").textContent = msg;
     $("file-info").hidden = false;
-    $("file-info").classList.add("is-error");
+    $("file-info").classList.toggle("is-error", isError);
   }
 
   $("audio-file").addEventListener("change", function (e) { setFile(e.target.files[0]); });
+  var dz = $("dropzone");
   // A file dropped anywhere else on the page must not make the browser open it (and lose the work).
   ["dragover", "drop"].forEach(function (t) {
     document.addEventListener(t, function (e) { if (!dz.contains(e.target)) e.preventDefault(); });
   });
-  var dz = $("dropzone");
   ["dragenter", "dragover"].forEach(function (t) {
     dz.addEventListener(t, function (e) { e.preventDefault(); dz.classList.add("is-over"); });
   });
@@ -256,9 +234,8 @@
       report(0, "녹음 파일을 준비하는 중");
       tx = { file: audioFile, hint: hint, prepared: await AudioChunker.prepare(audioFile), texts: [], alts: [] };
       tx.id = [audioFile.name, audioFile.size, audioFile.lastModified, hint].join("|");
-      tx.total = tx.prepared.chunks.length;
       var saved = sgetJson(TX_KEY);
-      if (saved && saved.id === tx.id && saved.total === tx.total) {
+      if (saved && saved.id === tx.id && saved.total === tx.prepared.chunks.length) {
         tx.texts = saved.texts || [];
         tx.alts = saved.alts || [];
       }
@@ -283,7 +260,7 @@
       doneHere++;
       // Saved as each piece arrives, so a reload or a sleeping phone doesn't lose it:
       // choosing the same file again continues where it stopped.
-      sset(TX_KEY, JSON.stringify({ id: tx.id, name: tx.file.name, total: tx.total, texts: tx.texts, alts: tx.alts }));
+      sset(TX_KEY, JSON.stringify({ id: tx.id, name: tx.file.name, total: total, texts: tx.texts, alts: tx.alts }));
       progress();
     }
 
@@ -300,7 +277,7 @@
     tx.text = join(tx.texts);
     tx.altText = join(tx.alts);
     tx.done = true;
-    tx.prepared = { duration: tx.prepared.duration, chunks: [] }; // release the decoded audio
+    tx.prepared = null; // release the decoded audio
     sdel(TX_KEY);
     $("tx-resume").hidden = true;
     return tx.text;
@@ -343,10 +320,7 @@
   }
 
   function saveJob() {
-    if (!job) return;
-    var copy = Object.assign({}, job);
-    delete copy.steps;
-    sset(JOB_KEY, JSON.stringify(copy)); // if storage is full, carry on without the safety copy
+    if (job) sset(JOB_KEY, JSON.stringify(job)); // if storage is full, carry on without the safety copy
   }
   function dropJob() {
     job = null;
@@ -387,7 +361,6 @@
       settings: settingsFromForm(),
       outline: null,
       chapters: [],
-      startedAt: Date.now(),
     };
     saveJob();
     await runJob();
@@ -402,23 +375,25 @@
     $("make-steps").appendChild(li);
     return {
       set: function (state, meta) {
-        li.className = state ? "is-" + state : "";
-        if (meta !== undefined) li.querySelector(".meta").textContent = meta;
+        li.className = "is-" + state;
+        li.querySelector(".meta").textContent = meta || "";
       },
-      label: function (t) { li.querySelector(".label").textContent = t; },
     };
   }
 
   function renderSteps() {
     $("make-steps").textContent = "";
-    job.steps = { transcribe: stepItem("녹음을 글로 옮기기"), outline: stepItem("이야기의 흐름을 읽고 목차를 짜는 중"), chapters: [] };
-    if (job.transcript) job.steps.transcribe.set("done", "");
+    steps = {
+      transcribe: stepItem("녹음을 글로 옮기기"),
+      outline: stepItem(job.outline ? "목차 완성: 《" + job.outline.title + "》" : "이야기의 흐름을 읽고 목차를 짜는 중"),
+      chapters: [],
+    };
+    if (job.transcript) steps.transcribe.set("done");
     if (job.outline) {
-      job.steps.outline.set("done", "");
-      job.steps.outline.label("목차 완성: 《" + job.outline.title + "》");
-      job.steps.chapters = job.outline.chapters.map(function (c, i) {
+      steps.outline.set("done");
+      steps.chapters = job.outline.chapters.map(function (c, i) {
         var s = stepItem("제" + (i + 1) + "장 " + c.title);
-        if (job.chapters[i]) s.set("done", "");
+        if (job.chapters[i]) s.set("done");
         return s;
       });
     }
@@ -489,14 +464,14 @@
     try {
       // 1) Recording → text, with the corrections the AI is sure of
       if (!job.transcript) {
-        job.steps.transcribe.set("active", "");
+        steps.transcribe.set("active");
         var heard = await transcribeRecording(function (fraction, label) {
           job.txFraction = fraction;
           updateOverall(label);
         });
         updateOverall("잘못 들린 말을 고치는 중");
         job.transcript = await autoFix(heard, job.settings);
-        job.steps.transcribe.set("done", "");
+        steps.transcribe.set("done");
         saveJob();
       }
       var payload = { transcript: job.transcript, settings: job.settings };
@@ -504,11 +479,11 @@
       // 2) Outline
       if (!job.outline) {
         job.outlineStarted = Date.now();
-        job.steps.outline.set("active", "읽는 중");
+        steps.outline.set("active", "읽는 중");
         updateOverall("목차를 짜고 있어요");
         var res = await withRetry(function () {
           return streamCall("/api/outline", payload, function (ev) {
-            if (ev.type === "progress") job.steps.outline.set("active", "쓰는 중");
+            if (ev.type === "progress") steps.outline.set("active", "쓰는 중");
           });
         }, 2);
         job.outline = res.outline;
@@ -529,7 +504,7 @@
       async function lane() {
         while (next < todo.length) {
           var i = todo[next++];
-          var step = job.steps.chapters[i];
+          var step = steps.chapters[i];
           step.set("active", "쓰는 중");
           try {
             var r = await withRetry(function () {
@@ -537,7 +512,7 @@
             }, 3);
             job.chapters[i] = r.chapter;
             saveJob();
-            step.set("done", "");
+            step.set("done");
             updateOverall("제" + (i + 1) + "장을 마쳤어요");
           } catch (err) {
             failures.push({ i: i, message: err.message });
@@ -550,15 +525,12 @@
       await Promise.all(lanes);
 
       if (failures.length) {
-        job.failed = true;
         var kept = written();
-        showError(
+        throw new Error(
           failures.map(function (f) { return "제" + (f.i + 1) + "장"; }).join(", ") + "을 쓰지 못했어요. " +
           (kept ? "이미 쓴 " + kept + "개 장은 그대로 있어요. " : "") +
           "‘이어서 쓰기’를 누르면 남은 부분만 다시 씁니다. (" + failures[0].message + ")"
         );
-        updateOverall("잠시 멈췄어요");
-        return;
       }
 
       // 4) Assemble and save
@@ -569,13 +541,12 @@
         return;
       }
       updateOverall("완성! 책을 펼칩니다");
-      $("overall-bar").style.width = "100%";
       dropJob();
       finished = true;
       setTimeout(function () { location.href = "/book?id=" + encodeURIComponent(book.id); }, 700);
     } catch (err) {
       job.failed = true;
-      if (!job.outline) job.steps[job.transcript ? "outline" : "transcribe"].set("failed", "다시 시도 필요");
+      if (!job.outline) steps[job.transcript ? "outline" : "transcribe"].set("failed", "다시 시도 필요");
       showError(err.message);
       updateOverall("잠시 멈췄어요");
     } finally {
@@ -634,9 +605,8 @@
     if (busy) return;
     if (!confirm("지금까지 쓴 내용을 버리고 처음부터 다시 만들까요?")) return;
     dropJob();
-    $("make-progress").hidden = true;
     showError("");
-    setBusyUi(false);
+    setBusyUi(false); // hides the progress list, now that there is no job
   });
 
   window.addEventListener("beforeunload", function (e) {
