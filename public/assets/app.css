@@ -221,7 +221,6 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
   .main { padding: 40px 56px 64px; max-width: 1000px; }
 
   .shelf { margin: 0; padding: 0 8px; border: 0; }
-  .library__actions .btn { min-height: 32px; padding: 4px 10px; font-size: 0.8rem; }
 
   .step { padding-block: 40px; }
   .step:first-child { padding-top: 0; }
@@ -235,6 +234,9 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
   .actions .error { flex-basis: 100%; }
   .primary--big { width: auto; padding: 14px 36px; }
   .make-progress .link-btn { margin-left: 0; }
+}
+@media (min-width: 1024px) and (pointer: fine) {
+  .library__actions .btn { min-height: 32px; padding: 4px 10px; font-size: 0.8rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

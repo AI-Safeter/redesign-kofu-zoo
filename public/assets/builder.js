@@ -683,6 +683,12 @@
       }
     } catch (e) {}
     restoreSavedWork();
+    // A reload would otherwise restore the scroll position, leaving these messages off screen.
+    var savedWork = $("resume").hidden ? $("tx-resume") : $("resume");
+    if (!savedWork.hidden) {
+      history.scrollRestoration = "manual";
+      savedWork.scrollIntoView({ block: "nearest" });
+    }
 
     try {
       var res = await fetch("/api/config", { headers: headers() });
