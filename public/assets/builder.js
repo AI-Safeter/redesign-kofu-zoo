@@ -306,7 +306,7 @@
       subjectName: $("subject").value.trim(),
       interviewer: $("interviewer").value.trim(),
       subjectRole: $("role").value.trim(),
-      interviewDate: $("date").value.trim(),
+      interviewDate: koreanDate($("date").value),
       interviewPlace: $("place").value.trim(),
       voice: document.querySelector('input[name="voice"]:checked').value,
       terms: $("hint").value.trim(),
@@ -317,6 +317,12 @@
   function showError(msg) {
     $("make-error").textContent = msg || "";
     $("make-error").hidden = !msg;
+  }
+
+  /** "2026-11-26" from the date picker → "2026년 11월 26일", as it is written in the book. */
+  function koreanDate(v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    return m ? m[1] + "년 " + Number(m[2]) + "월 " + Number(m[3]) + "일" : "";
   }
 
   function saveJob() {
@@ -537,6 +543,7 @@
       updateOverall("완성! 책을 펼칩니다");
       dropJob();
       finished = true;
+      busy = false; // the book is saved: opening it must not ask "leave this page?"
       setTimeout(function () { location.href = "/book?id=" + encodeURIComponent(book.id); }, 700);
     } catch (err) {
       job.failed = true;
@@ -632,20 +639,6 @@
     }
     sdel("chronicle:draft"); // transcripts typed in earlier versions
   }
-
-  // Sidebar on wide screens: mark the step being worked on.
-  var stepLinks = document.querySelectorAll(".steps-nav a");
-  var steps = new IntersectionObserver(function (entries) {
-    entries.forEach(function (e) {
-      if (!e.isIntersecting) return;
-      var id = e.target.getAttribute("aria-labelledby");
-      stepLinks.forEach(function (a) {
-        if (a.hash === "#" + id) a.setAttribute("aria-current", "step");
-        else a.removeAttribute("aria-current");
-      });
-    });
-  }, { rootMargin: "-30% 0px -60% 0px" });
-  document.querySelectorAll(".step").forEach(function (s) { steps.observe(s); });
 
   // Shown until the right code is entered; the code is then remembered on this device.
   function askAccessCode() {
