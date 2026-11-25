@@ -1,4 +1,6 @@
-# 인생 이야기 전자책 · Life Chronicle E-book Builder
+# InterviewToEbook · 인생 이야기 전자책
+
+Live: https://interview-to-ebook.vercel.app
 
 Upload a recorded interview (Korean) and get an HTML e-book that chronicles one person's life, in time order:
 
