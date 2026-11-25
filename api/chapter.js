@@ -1,10 +1,11 @@
 // Step 2 of writing: write one chapter. The browser calls this once per chapter.
-import { checkAccess, errorResponse, isMock, ndjsonStream } from "./_lib/http.js";
+import { checkAccess } from "./_lib/access.js";
+import { errorResponse, isMock, ndjsonStream } from "./_lib/http.js";
 import { readSettings, writeChapter } from "./_lib/writer.js";
 import { mockChapter } from "./_lib/mock.js";
 
 export async function POST(request) {
-  const denied = checkAccess(request);
+  const denied = await checkAccess(request);
   if (denied) return denied;
 
   let body, input;

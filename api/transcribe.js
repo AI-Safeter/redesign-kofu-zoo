@@ -6,7 +6,8 @@
 //     is set — far more accurate on Korean interviews, about 2 cents per hour of audio;
 //   Groq Whisper large-v3 (free tier) as the fallback.
 // TRANSCRIBE_PROVIDER=groq|openrouter forces one.
-import { checkAccess, errorResponse, json, isMock } from "./_lib/http.js";
+import { checkAccess } from "./_lib/access.js";
+import { errorResponse, json, isMock } from "./_lib/http.js";
 import { mockTranscribe } from "./_lib/mock.js";
 import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels } from "./_lib/audio-llm.js";
 
@@ -21,7 +22,7 @@ export function canTranscribe() {
 const groqEnabled = () => Boolean(process.env.GROQ_API_KEY) && (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase() !== "openrouter";
 
 export async function POST(request) {
-  const denied = checkAccess(request);
+  const denied = await checkAccess(request);
   if (denied) return denied;
 
   const url = new URL(request.url);

@@ -1,5 +1,4 @@
 // Small helpers shared by the API functions.
-import { timingSafeEqual } from "node:crypto";
 
 export function json(data, status = 200) {
   return Response.json(data, { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -10,21 +9,6 @@ export function errorResponse(message, status = 400) {
 }
 
 export const fail = (message, status = 500) => Object.assign(new Error(message), { status });
-
-/** Returns an error Response when the access code is required and missing/wrong, otherwise null. */
-export function checkAccess(request) {
-  const required = process.env.ACCESS_CODE;
-  if (!required) return null;
-  let given = request.headers.get("x-access-code") || "";
-  try {
-    given = decodeURIComponent(given);
-  } catch {}
-  const [a, b] = [Buffer.from(given), Buffer.from(required)];
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    return errorResponse("접근 코드가 올바르지 않습니다.", 401);
-  }
-  return null;
-}
 
 export const isMock = () => process.env.MOCK_AI === "1";
 

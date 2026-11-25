@@ -55,7 +55,7 @@ published copy in Vercel Blob ───▶ /read?id=… read-only page anyone wi
    | `OPENROUTER_API_KEY` | recommended | Speech recognition (Qwen audio model), and free writing models used when there is no Nous key or Nous fails. <https://openrouter.ai/keys> |
    | `GROQ_API_KEY` | recommended | Free Whisper fallback for transcription (used when the OpenRouter audio models fail or there's no OpenRouter key). Create a key at <https://console.groq.com/keys>. Without it, recordings can only be transcribed through OpenRouter |
    | `BLOB_READ_WRITE_TOKEN` | for 발행하기 | Publishing books as read-only pages (`/read?id=…`). Set by step 3. Without it the 발행하기 button is hidden |
-   | `ACCESS_CODE` | recommended | If set, visitors must enter this code before the app calls the paid APIs |
+   | `ACCESS_CODE` | recommended | If set, visitors must enter this code (once per device) before the app calls the paid APIs. After 20 wrong tries, that network address is refused for 24 hours |
    | `OPENROUTER_MODELS` | no | Comma-separated models, tried in order. Default: `nvidia/nemotron-3-ultra-550b-a55b:free`, `baidu/ernie-5.5-flash-preview:free`, `google/gemma-4-31b-it:free` |
    | `NOUS_MODELS` | no | Comma-separated Nous Portal models, tried in order. Default: `anthropic/claude-sonnet-5.5` |
    | `WRITER_EFFORT` | no | Reasoning effort for the gateway models: `low` (default) / `medium` / `high` |
