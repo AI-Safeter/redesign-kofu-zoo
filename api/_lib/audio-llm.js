@@ -5,6 +5,7 @@
 //   qwen/qwen3.8-omni-flash 14/17 (~$0.02 per hour of audio), google/gemini-2.5-flash 13/17
 //   (~$0.15/hour), Groq whisper-large-v3 5/17. They also kept fillers Whisper silently drops,
 //   and invented no passages. Whisper (Groq) remains the free fallback.
+import { list } from "./openrouter.js";
 
 const DEFAULT_MODELS = ["qwen/qwen3.8-omni-flash", "google/gemini-2.5-flash"];
 
@@ -12,11 +13,6 @@ export function audioModelsEnabled() {
   const wanted = (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase();
   if (wanted && wanted !== "openrouter") return false;
   return Boolean(process.env.OPENROUTER_API_KEY);
-}
-
-function models() {
-  const list = (process.env.OPENROUTER_AUDIO_MODELS || "").split(",").map((m) => m.trim()).filter(Boolean);
-  return list.length ? list : DEFAULT_MODELS;
 }
 
 /** "wav" or "mp3" when the audio models accept this file, else null. */
@@ -75,7 +71,7 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
   const data = Buffer.from(audio).toString("base64");
   let lastError;
 
-  for (const model of only ? [only] : models()) {
+  for (const model of only ? [only] : list(process.env.OPENROUTER_AUDIO_MODELS, DEFAULT_MODELS)) {
     try {
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -101,10 +97,7 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
           ],
         }),
       });
-      if (!res.ok) {
-        lastError = new Error(`${model}: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
-        continue;
-      }
+      if (!res.ok) throw new Error(`${model}: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
       const body = await res.json();
       const choice = body.choices?.[0];
       const text = clean(choice?.message?.content);

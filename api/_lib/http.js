@@ -1,10 +1,8 @@
 // Small helpers shared by the API functions.
+import { timingSafeEqual } from "node:crypto";
 
 export function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
-  });
+  return Response.json(data, { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 }
 
 export function errorResponse(message, status = 400) {
@@ -21,17 +19,11 @@ export function checkAccess(request) {
   try {
     given = decodeURIComponent(given);
   } catch {}
-  if (!timingSafeEqual(given, required)) {
+  const [a, b] = [Buffer.from(given), Buffer.from(required)];
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return errorResponse("접근 코드가 올바르지 않습니다.", 401);
   }
   return null;
-}
-
-function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }
 
 export const isMock = () => process.env.MOCK_AI === "1";
@@ -69,7 +61,6 @@ export function ndjsonStream(work, request) {
       } finally {
         clearInterval(heartbeat);
         if (!closed) {
-          closed = true;
           try {
             controller.close();
           } catch {}

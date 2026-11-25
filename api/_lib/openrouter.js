@@ -16,7 +16,7 @@ const OPENROUTER_DEFAULT_MODELS = [
 ];
 const NOUS_DEFAULT_MODELS = ["anthropic/claude-sonnet-5.5"];
 
-const list = (value, fallback) => {
+export const list = (value, fallback) => {
   const items = String(value || "").split(",").map((m) => m.trim()).filter(Boolean);
   return items.length ? items : fallback;
 };
@@ -107,7 +107,7 @@ async function callGateway(gw, args) {
       const rest = models.filter((m) => m !== failed);
       // Without a list on the server side, an unusable model (error status) moves us on too.
       const moveOn = err.retryOther || (!gw.fallbackList && err.status !== 401 && err.status !== 402);
-      if (!moveOn || !failed || rest.length === 0 || rest.length === models.length) throw err;
+      if (!moveOn || rest.length === 0 || rest.length === models.length) throw err;
       console.warn(`${gw.name}: retrying without ${failed}`);
       models = rest;
     }
@@ -163,28 +163,21 @@ async function attempt(gw, models, { system, cached, userText, schema, schemaNam
   }
 
   // Read the server-sent event stream and collect the text.
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
   let lastSent = 0;
   let finish = null;
   let servedBy = models.length === 1 ? models[0] : "";
   let usage = null;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
+  for await (const chunk of res.body.pipeThrough(new TextDecoderStream())) {
+    const lines = (buffer + chunk).split("\n");
     buffer = lines.pop();
     for (const raw of lines) {
       const line = raw.trim();
       if (!line.startsWith("data:")) continue; // skips ": PROCESSING" keep-alives
-      const data = line.slice(5).trim();
-      if (data === "[DONE]") continue;
       let event;
       try {
-        event = JSON.parse(data);
+        event = JSON.parse(line.slice(5)); // also skips "[DONE]"
       } catch {
         continue;
       }
