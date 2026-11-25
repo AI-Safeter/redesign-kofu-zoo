@@ -1,10 +1,11 @@
 // Proofreading step: suggests likely speech-recognition errors for the user to accept.
-import { checkAccess, errorResponse, isMock, ndjsonStream } from "./_lib/http.js";
+import { checkAccess } from "./_lib/access.js";
+import { errorResponse, isMock, ndjsonStream } from "./_lib/http.js";
 import { findFixes, readSettings } from "./_lib/writer.js";
 import { mockFixes } from "./_lib/mock.js";
 
 export async function POST(request) {
-  const denied = checkAccess(request);
+  const denied = await checkAccess(request);
   if (denied) return denied;
 
   let input;

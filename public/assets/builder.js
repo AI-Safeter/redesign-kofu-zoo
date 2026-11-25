@@ -664,7 +664,8 @@
           resolve(c);
           return;
         }
-        $("gate-error").textContent = c ? "접근 코드가 올바르지 않아요." : "연결할 수 없어요. 다시 시도해 주세요.";
+        $("gate-error").textContent = !c ? "연결할 수 없어요. 다시 시도해 주세요." :
+          c.accessLocked ? "여러 번 틀려서 24시간 동안 쓸 수 없어요." : "접근 코드가 올바르지 않아요.";
         $("gate-error").hidden = false;
         $("gate-code").select();
       });

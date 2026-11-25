@@ -1,14 +1,15 @@
 // Publishes a book as a read-only page (/read?id=…). Publishing again with the id and the
 // edit token returned the first time replaces the same page; DELETE with them removes it.
 import { createHash, randomBytes } from "node:crypto";
-import { checkAccess, errorResponse, json } from "./_lib/http.js";
+import { checkAccess } from "./_lib/access.js";
+import { errorResponse, json } from "./_lib/http.js";
 import { canPublish, deleteBook, isBookId, loadBook, saveBook } from "./_lib/books.js";
 
 const MAX_BYTES = 3_000_000;
 const hash = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 export async function POST(request) {
-  const denied = checkAccess(request);
+  const denied = await checkAccess(request);
   if (denied) return denied;
   if (!canPublish()) return errorResponse("발행 기능이 설정되지 않았어요.", 503);
 
@@ -42,7 +43,7 @@ export async function POST(request) {
 }
 
 export async function DELETE(request) {
-  const denied = checkAccess(request);
+  const denied = await checkAccess(request);
   if (denied) return denied;
   if (!canPublish()) return errorResponse("발행 기능이 설정되지 않았어요.", 503);
   let body;

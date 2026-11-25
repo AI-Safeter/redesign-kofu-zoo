@@ -1,10 +1,11 @@
 // Step 1 of writing: plan the book (title, chapters, prologue, timeline, epilogue).
-import { checkAccess, errorResponse, isMock, ndjsonStream } from "./_lib/http.js";
+import { checkAccess } from "./_lib/access.js";
+import { errorResponse, isMock, ndjsonStream } from "./_lib/http.js";
 import { readSettings, writeOutline } from "./_lib/writer.js";
 import { mockOutline } from "./_lib/mock.js";
 
 export async function POST(request) {
-  const denied = checkAccess(request);
+  const denied = await checkAccess(request);
   if (denied) return denied;
 
   let input;
