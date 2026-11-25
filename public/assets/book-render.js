@@ -78,62 +78,57 @@
   }
 
   // ---------- Pages ----------
+  // Each page builder gets the book, its layout entry p and the whole layout, and returns the page's content.
 
-  function coverPage(book) {
-    return {
-      kind: "cover",
-      label: "표지",
-      node: el("div", { className: "cover" }, [
-        el("div", { className: "cover__main" }, [
-          txt("h1", "cover__title", book.title, "title"),
-          book.subtitle ? txt("p", "cover__subtitle", book.subtitle, "subtitle") : null,
-        ]),
-      ]),
-    };
+  function heading(text) {
+    return el("h2", { className: "page__heading", text: text });
   }
 
-  function contentsPage(layout) {
+  function coverPage(book) {
+    return el("div", { className: "cover" }, [
+      el("div", { className: "cover__main" }, [
+        txt("h1", "cover__title", book.title, "title"),
+        book.subtitle ? txt("p", "cover__subtitle", book.subtitle, "subtitle") : null,
+      ]),
+    ]);
+  }
+
+  function contentsPage(book, p, layout) {
     var list = el("ol", { className: "toc" });
-    layout.forEach(function (e) {
-      if (!e.toc) return;
+    // Every page after the cover and this one.
+    layout.slice(2).forEach(function (e) {
+      var c = e.chapter != null ? book.chapters[e.chapter] : null;
+      var years = c && yearsOf(c);
       list.appendChild(
-        el("li", { className: e.chapter != null ? "toc__chapter" : "toc__extra" }, [
+        el("li", { className: c ? "toc__chapter" : "toc__extra" }, [
           el("a", { href: "#" + (e.index + 1), "data-goto": e.index, className: "toc__link" }, [
-            el("span", { className: "toc__num", text: e.chapter != null ? chapterLabel(e.chapter) : "" }),
+            el("span", { className: "toc__num", text: c ? chapterLabel(e.chapter) : "" }),
             el("span", { className: "toc__title" }, [
-              el("span", { text: e.label }),
-              e.years ? el("span", { className: "toc__years", text: e.years }) : null,
+              el("span", { text: c ? c.title : e.label }),
+              years ? el("span", { className: "toc__years", text: years }) : null,
             ]),
             el("span", { className: "toc__page", text: String(e.index + 1) }),
           ]),
         ])
       );
     });
-    return {
-      kind: "contents",
-      label: "차례",
-      node: el("div", null, [el("h2", { className: "page__heading", text: "차례" }), list]),
-    };
+    return el("div", null, [heading(p.label), list]);
   }
 
-  function peoplePage(book) {
+  function peoplePage(book, p) {
     var list = el("ul", { className: "people" });
-    book.people.forEach(function (p, i) {
+    book.people.forEach(function (person, i) {
       list.appendChild(
         el("li", null, [
-          txt("span", "people__relation", p.relation, "people." + i + ".relation"),
+          txt("span", "people__relation", person.relation, "people." + i + ".relation"),
           el("span", { className: "people__body" }, [
-            p.name ? txt("span", "people__name", p.name, "people." + i + ".name") : null,
-            p.note ? txt("span", "people__note", p.note, "people." + i + ".note") : null,
+            person.name ? txt("span", "people__name", person.name, "people." + i + ".name") : null,
+            person.note ? txt("span", "people__note", person.note, "people." + i + ".note") : null,
           ]),
         ])
       );
     });
-    return {
-      kind: "people",
-      label: "이 책의 사람들",
-      node: el("div", null, [el("h2", { className: "page__heading", text: "이 책의 사람들" }), list]),
-    };
+    return el("div", null, [heading(p.label), list]);
   }
 
   function prose(paragraphs, pathPrefix) {
@@ -161,7 +156,7 @@
     return verifyNote([["확인할 문장", list]]);
   }
 
-  function prologuePage(book) {
+  function prologuePage(book, p) {
     var epigraphOk = book.epigraph && norm(book.epigraph) !== norm(book.title) && norm(book.title).indexOf(norm(book.epigraph)) < 0;
     var epigraph = epigraphOk
       ? el("figure", { className: "epigraph" }, [
@@ -169,19 +164,12 @@
           book.subjectName ? el("figcaption", { text: "— " + book.subjectName }) : null,
         ])
       : null;
-    return {
-      kind: "prologue",
-      label: "책을 펴내며",
-      node: el("div", null, [
-        frameNote(book),
-        el("h2", { className: "page__heading", text: "책을 펴내며" }),
-        epigraph,
-        prose(book.prologue, "prologue"),
-      ]),
-    };
+    return el("div", null, [frameNote(book), heading(p.label), epigraph, prose(book.prologue, "prologue")]);
   }
 
-  function chapterPage(book, c, i) {
+  function chapterPage(book, p) {
+    var i = p.chapter;
+    var c = book.chapters[i];
     var paras = c.paragraphs || [];
     var ex = c.excerpt || {};
     var q = c.pullQuote && c.pullQuote.text ? c.pullQuote : null;
@@ -205,8 +193,8 @@
     }
 
     var body = el("div", { className: "prose" });
-    paras.forEach(function (p, j) {
-      body.appendChild(txt("p", j === 0 ? "lead" : null, p, "chapters." + i + ".paragraphs." + j));
+    paras.forEach(function (para, j) {
+      body.appendChild(txt("p", j === 0 ? "lead" : null, para, "chapters." + i + ".paragraphs." + j));
       if (q && j === quoteAfter) body.appendChild(pullQuote(q, i));
     });
 
@@ -235,11 +223,7 @@
       ["빠진 말", c.missing],
     ]);
 
-    return {
-      kind: "chapter",
-      label: chapterLabel(i) + " " + c.title,
-      node: el("div", null, [check, head, q && quoteAfter < 0 ? pullQuote(q, i, true) : null, body, excerpt]),
-    };
+    return el("div", null, [check, head, q && quoteAfter < 0 ? pullQuote(q, i, true) : null, body, excerpt]);
   }
 
   function pullQuote(q, i, opening) {
@@ -249,11 +233,7 @@
     ]);
   }
 
-  function lastWordsTitle(book) {
-    return book.kind === "work" ? "맺는 말" : "남기고 싶은 말";
-  }
-
-  function lastWordsPage(book) {
+  function lastWordsPage(book, p) {
     // Skip a line identical to the epigraph, keeping each paragraph's real index so edits are
     // saved to the right place.
     var ep = norm(book.epigraph);
@@ -266,14 +246,10 @@
       body,
       book.subjectName ? el("p", { className: "letter__sign", text: "— " + book.subjectName }) : null,
     ]);
-    return {
-      kind: "lastwords",
-      label: lastWordsTitle(book),
-      node: el("div", null, [el("h2", { className: "page__heading", text: lastWordsTitle(book) }), letter]),
-    };
+    return el("div", null, [heading(p.label), letter]);
   }
 
-  function timelinePage(book, layout) {
+  function timelinePage(book, p, layout) {
     var born = num(book.birthYear);
     var groups = {};
     (book.timeline || []).forEach(function (t, i) {
@@ -313,58 +289,50 @@
       });
       wrap.appendChild(list);
     });
-    return {
-      kind: "timeline",
-      label: "연보",
-      node: el("div", null, [
-        el("h2", { className: "page__heading", text: "연보" }),
-        (book.timeline || []).some(function (t) { return t.approx; })
-          ? el("p", { className: "timeline__note", text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." })
-          : null,
-        wrap,
-      ]),
-    };
+    return el("div", null, [
+      heading(p.label),
+      (book.timeline || []).some(function (t) { return t.approx; })
+        ? el("p", { className: "timeline__note", text: "‘무렵’이 붙은 연도는 기억에 기댄 어림입니다." })
+        : null,
+      wrap,
+    ]);
   }
 
-  function epiloguePage(book) {
-    return {
-      kind: "epilogue",
-      label: "에필로그",
-      node: el("div", null, [el("h2", { className: "page__heading", text: "에필로그" }), prose(book.epilogue, "epilogue")]),
-    };
+  function epiloguePage(book, p) {
+    return el("div", null, [heading(p.label), prose(book.epilogue, "epilogue")]);
   }
+
+  var builders = {
+    cover: coverPage,
+    contents: contentsPage,
+    people: peoplePage,
+    prologue: prologuePage,
+    chapter: chapterPage,
+    lastwords: lastWordsPage,
+    timeline: timelinePage,
+    epilogue: epiloguePage,
+  };
 
   function buildPages(book) {
     // First lay out which pages exist, so the contents and timeline can link to them.
     var layout = [];
-    var push = function (e) {
-      e.index = layout.length;
-      layout.push(e);
+    var add = function (kind, label, chapter) {
+      layout.push({ kind: kind, label: label, chapter: chapter, index: layout.length });
     };
-    push({ kind: "cover" });
-    push({ kind: "contents" });
-    if (book.people && book.people.length) push({ kind: "people", toc: true, label: "이 책의 사람들" });
-    if (book.prologue && book.prologue.length) push({ kind: "prologue", toc: true, label: "책을 펴내며" });
+    add("cover", "표지");
+    add("contents", "차례");
+    if (book.people && book.people.length) add("people", "이 책의 사람들");
+    if (book.prologue && book.prologue.length) add("prologue", "책을 펴내며");
     book.chapters.forEach(function (c, i) {
-      push({ kind: "chapter", toc: true, chapter: i, label: c.title, years: yearsOf(c) });
+      add("chapter", chapterLabel(i) + " " + c.title, i);
     });
-    if (book.lastWords && book.lastWords.length) push({ kind: "lastwords", toc: true, label: lastWordsTitle(book) });
-    var dated = (book.timeline || []).some(function (t) { return t.year || t.when; });
-    if (dated) push({ kind: "timeline", toc: true, label: "연보" });
-    push({ kind: "epilogue", toc: true, label: "에필로그" });
-
-    return layout.map(function (e) {
-      switch (e.kind) {
-        case "cover": return coverPage(book);
-        case "contents": return contentsPage(layout);
-        case "people": return peoplePage(book);
-        case "prologue": return prologuePage(book);
-        case "chapter": return chapterPage(book, book.chapters[e.chapter], e.chapter);
-        case "lastwords": return lastWordsPage(book);
-        case "timeline": return timelinePage(book, layout);
-        default: return epiloguePage(book);
-      }
+    if (book.lastWords && book.lastWords.length) add("lastwords", book.kind === "work" ? "맺는 말" : "남기고 싶은 말");
+    if ((book.timeline || []).some(function (t) { return t.year || t.when; })) add("timeline", "연보");
+    add("epilogue", "에필로그");
+    layout.forEach(function (p) {
+      p.node = builders[p.kind](book, p, layout);
     });
+    return layout;
   }
 
   // ---------- Editing ----------
@@ -393,13 +361,11 @@
     // ----- Top bar: home, title, and (for the owner) 글 고치기 · 발행하기 -----
     var editBtn = options.onChange ? button("글 고치기", "본문을 직접 고칩니다", function () { setEditing(!editing); }) : null;
     var publishBtn = options.onPublish ? button("발행하기", "읽기 전용 링크를 만듭니다", publish) : null;
-    var top = el("header", { className: "reader__top" }, [
-      options.homeHref
-        ? el("a", { className: "reader__home", href: options.homeHref, text: "← 서재" })
-        : el("span", { className: "reader__home" }),
-      el("p", { className: "reader__title", text: book.title || "" }),
-      el("div", { className: "reader__actions" }, [editBtn, publishBtn]),
-    ]);
+    var home = options.homeHref
+      ? el("a", { className: "reader__home", href: options.homeHref, text: "← 서재" })
+      : el("span", { className: "reader__home" });
+    var titleEl = el("p", { className: "reader__title", text: book.title || "" });
+    var top = el("header", { className: "reader__top" }, [home, titleEl, el("div", { className: "reader__actions" }, [editBtn, publishBtn])]);
 
     // ----- Published link -----
     var linkIn = el("input", { type: "text", readonly: "readonly", "aria-label": "책 링크" });
@@ -459,35 +425,32 @@
         var from = findIn.value;
         if (!from) return;
         var count = 0;
-        var seen = {};
         stage.querySelectorAll("[data-path]").forEach(function (n) {
-          if (n.textContent.indexOf(from) < 0) return;
-          var path = n.getAttribute("data-path");
-          if (!seen[path]) count += n.textContent.split(from).length - 1;
-          seen[path] = true;
-          n.textContent = n.textContent.split(from).join(replaceIn.value);
-          setPath(book, path, n.textContent.trim());
+          var parts = n.textContent.split(from);
+          if (parts.length < 2) return;
+          count += parts.length - 1;
+          n.textContent = parts.join(replaceIn.value);
+          setPath(book, n.getAttribute("data-path"), n.textContent.trim());
         });
         // Fields that are not on any page still feed the saved file's plain-text version.
         ["subjectName", "speakerRole"].forEach(function (k) {
           if (book[k]) book[k] = String(book[k]).split(from).join(replaceIn.value);
         });
-        top.querySelector(".reader__title").textContent = book.title || "";
+        titleEl.textContent = book.title || "";
         replaceDone.textContent = count + "곳";
         if (count) options.onChange(book);
       });
     }
 
     // ----- Pages -----
-    var stage = el("main", { className: "reader__stage" });
-    pages.forEach(function (p, i) {
-      var section = el("section", {
+    var sections = pages.map(function (p, i) {
+      return el("section", {
         className: "page page--" + p.kind,
         id: "page-" + (i + 1),
         "aria-label": p.label,
       }, [el("div", { className: "page__inner" }, [p.node, el("p", { className: "page__folio", "aria-hidden": "true", text: i === 0 ? "" : String(i + 1) })])]);
-      stage.appendChild(section);
     });
+    var stage = el("main", { className: "reader__stage" }, sections);
 
     // ----- Bottom navigation -----
     var prev = button("‹ 이전", "이전 쪽", function () { go(current - 1, true); });
@@ -501,8 +464,6 @@
     root.textContent = "";
     root.className = "reader";
     [top, replaceBar, linkBar, bar, stage, bottom].forEach(function (n) { if (n) root.appendChild(n); });
-
-    var sections = stage.querySelectorAll(".page");
 
     function go(i, userAction, push) {
       if (i < 0 || i >= pages.length) return;
@@ -584,7 +545,7 @@
       var path = e.target.getAttribute("data-path");
       if (!path) return;
       setPath(book, path, e.target.textContent.trim());
-      if (path === "title") top.querySelector(".reader__title").textContent = book.title;
+      if (path === "title") titleEl.textContent = book.title;
       clearTimeout(saveTimer);
       saveTimer = setTimeout(function () { saveTimer = null; options.onChange(book); }, 400);
     });
@@ -596,7 +557,7 @@
     }
     window.addEventListener("pagehide", flushSave);
     document.addEventListener("visibilitychange", function () { if (document.hidden) flushSave(); });
-    top.querySelector(".reader__home").addEventListener("click", flushSave);
+    home.addEventListener("click", flushSave);
     stage.addEventListener("paste", function (e) {
       if (!editing) return;
       e.preventDefault(); // paste as plain text only
