@@ -535,6 +535,26 @@
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(current + (dx < 0 ? 1 : -1), true);
     });
 
+    // Mouse wheel or trackpad: scrolling on past the end of a page turns to the next one, and
+    // past the top to the previous one. One turn per gesture, and only for a gesture that starts
+    // at that edge, so scrolling down a long chapter doesn't run on into the next.
+    var gesture = null, lastWheel = 0;
+    window.addEventListener("wheel", function (e) {
+      if (editing || e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      var now = Date.now();
+      if (now - lastWheel > 250) {
+        var doc = document.documentElement;
+        gesture = { sum: 0, turned: false, top: window.scrollY <= 1, bottom: window.innerHeight + window.scrollY >= doc.scrollHeight - 2 };
+      }
+      lastWheel = now;
+      var down = e.deltaY > 0;
+      if (gesture.turned || !(down ? gesture.bottom : gesture.top)) return;
+      gesture.sum += Math.abs(e.deltaY) * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
+      if (gesture.sum < 50) return; // a light touch of the trackpad doesn't turn the page
+      gesture.turned = true;
+      go(current + (down ? 1 : -1), true);
+    }, { passive: true });
+
     window.addEventListener("hashchange", function () {
       go(fromHash(), true);
     });
