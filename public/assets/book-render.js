@@ -373,8 +373,9 @@
     var copyBtn = button("복사", "링크를 복사합니다", function () {
       linkIn.select();
       var done = function () { linkStatus.textContent = "복사됨"; };
-      if (navigator.clipboard) navigator.clipboard.writeText(linkIn.value).then(done, function () {});
-      else if (document.execCommand("copy")) done();
+      var fallback = function () { if (document.execCommand("copy")) done(); };
+      if (navigator.clipboard) navigator.clipboard.writeText(linkIn.value).then(done, fallback);
+      else fallback();
     });
     var unpublishBtn = options.onUnpublish ? button("발행 취소", "발행한 책을 지웁니다", unpublish) : null;
     var linkBar = options.onPublish ? el("div", { className: "reader__replace", hidden: "hidden" }, [linkIn, copyBtn, unpublishBtn, linkStatus]) : null;
