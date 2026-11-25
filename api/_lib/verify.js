@@ -65,11 +65,7 @@ function alignFrom(q, t, start) {
 
 /** Text inside “…”, "…", 「…」 or 『…』 that is long enough to be a quotation. */
 export function quotedSpans(paragraph) {
-  const spans = [];
-  const re = /[“"「『]([^”"」』]{6,})[”"」』]/g;
-  let m;
-  while ((m = re.exec(paragraph))) spans.push(m[1].trim());
-  return spans;
+  return [...paragraph.matchAll(/[“"「『]([^”"」』]{6,})[”"」』]/g)].map((m) => m[1].trim());
 }
 
 /** Share of shared three-character sequences (0–1); used to drop near-duplicate paragraphs. */

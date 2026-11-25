@@ -105,8 +105,6 @@ ${settings.voice === "oral"
 ${settings.terms ? `- Correct spellings of names and terms in this recording (use exactly these): ${settings.terms}` : ""}`.trim();
 }
 
-const transcriptBlock = (transcript) => `<transcript>\n${transcript}\n</transcript>`;
-
 function outlineRequest(settings, transcript) {
   return `Plan the e-book from the interview above. First decide what kind of interview it is, then gather the evidence, then write the short framing texts.
 
@@ -233,7 +231,7 @@ const FUNCTION_BUDGET_MS = 270_000;
 // Retries are only started while this much of the budget is left.
 const RETRY_CUTOFF_MS = 150_000;
 
-async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal, deadline }) {
+async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal, deadline = Date.now() + FUNCTION_BUDGET_MS }) {
   // Stop this call when the function's time is nearly up, keeping earlier results.
   const left = deadline - Date.now();
   if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
@@ -241,7 +239,7 @@ async function callModel({ settings, transcript, userText, schema, schemaName, o
   return callGateways({
     deadline,
     system: systemPrompt(settings),
-    cached: transcriptBlock(transcript),
+    cached: `<transcript>\n${transcript}\n</transcript>`,
     userText,
     schema,
     schemaName,
@@ -303,16 +301,12 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
     schemaName: "book_outline",
     onProgress,
     signal,
-    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const index = indexWithNumbers(transcript);
   const outline = normalizeOutline(data, index, chapterLimit(settings, transcript), settings);
   if (settings.voice === "oral") assignSpans(outline, transcript);
   // Sentences in the framing texts that the interview doesn't support, for the family to check.
-  outline.frameUnsupported = [...outline.prologue, ...outline.epilogue]
-    .flatMap((p) => p.match(/[^.!?。]+[.!?。]?/g) || [])
-    .filter((s) => norm_(s).length >= 8 && ((RISKY.test(s) && support(s, index) < 0.35) || numberMismatch(s, index)))
-    .map((s) => s.trim());
+  outline.frameUnsupported = unsupportedSentences([...outline.prologue, ...outline.epilogue], index);
   if (outline.chapters.length === 0) throw fail("목차를 만들지 못했습니다. 다시 시도해 주세요.");
   return { outline };
 }
@@ -333,18 +327,16 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
   // Asks once more with feedback; keeps the new draft only when it has text and `better` holds.
   const tryAgain = async (feedback, better) => {
     const retry = await ask("\n\n" + feedback).catch(() => null);
-    if (!retry) return false;
+    if (!retry) return;
     const again = normalizeChapter(retry.data, transcriptIndex, plan, outline, settings);
-    if (!again.paragraphs.length || !better(again)) return false;
-    chapter = again;
-    return true;
+    if (again.paragraphs.length && better(again)) chapter = again;
   };
 
   // A chapter that is mostly pasted quotations is not writing.
-  if (settings.voice !== "oral" && chapter.quotedShare > 0.45 && canRetry()) {
+  if (settings.voice !== "oral" && quotedShare(chapter.paragraphs) > 0.45 && canRetry()) {
     await tryAgain(
-      `Your previous draft was ${Math.round(chapter.quotedShare * 100)}% quotations. Rewrite it mostly in your own narration, with at most two short quotations.`,
-      (again) => again.quotedShare < chapter.quotedShare,
+      `Your previous draft was ${Math.round(quotedShare(chapter.paragraphs) * 100)}% quotations. Rewrite it mostly in your own narration, with at most two short quotations.`,
+      (again) => quotedShare(again.paragraphs) < quotedShare(chapter.paragraphs),
     );
   }
   // 구술 정리 that still reads like raw speech ("뭐 … 이제 … 막") gets one more editing pass.
@@ -368,16 +360,14 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     const share = (m) => m.join("").length / Math.max(1, passageSentences.join("").length);
     let missing = missingFrom(chapter);
     if (share(missing) > 0.2 && canRetry()) {
-      const before = chapter;
-      const replaced = await tryAgain(
+      await tryAgain(
         `Your previous draft left out parts of the passage. Include all of it, edited for reading, in order — in particular:\n${missing.map((m) => `- ${m}`).join("\n")}`,
-        (again) => share(missingFrom(again)) < share(missing) && again.unsupported.length <= before.unsupported.length + 1,
+        (again) => share(missingFrom(again)) < share(missing) && again.unsupported.length <= chapter.unsupported.length + 1,
       );
-      if (replaced) missing = missingFrom(chapter);
+      missing = missingFrom(chapter);
     }
     chapter.missing = missing.slice(0, 8);
   }
-  delete chapter.quotedShare;
   if (chapter.paragraphs.length === 0) throw fail("이 장의 본문을 받지 못했습니다. 다시 시도해 주세요.");
   return { chapter };
 }
@@ -433,7 +423,6 @@ At most 30 items; [] if there are none.`,
     schemaName: "transcript_fixes",
     onProgress,
     signal,
-    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const seen = new Set();
   const fixes = [];
@@ -448,28 +437,25 @@ At most 30 items; [] if there are none.`,
     let end = at + heard.length;
     while (start > 0 && !/\s/.test(transcript[start - 1])) start--;
     while (end < transcript.length && !/\s|[.,?!]/.test(transcript[end])) end++;
-    const before = transcript.slice(start, at);
-    const after = transcript.slice(at + heard.length, end);
-    if (meant !== "?") meant = before + meant + after;
+    if (meant !== "?") meant = transcript.slice(start, at) + meant + transcript.slice(at + heard.length, end);
     heard = transcript.slice(start, end);
     if (seen.has(heard)) continue;
     seen.add(heard);
     let kind = ["mishearing", "term", "number"].includes(f.kind) ? f.kind : "mishearing";
     if (/\d/.test(heard + meant)) kind = "number";
     // A fix whose own evidence names a different number than it proposes is self-contradictory.
-    const whyNums = (text(f?.why).match(/\d+/g) || []);
+    const why = text(f.why);
+    const whyNums = why.match(/\d+/g) || [];
     const meantNums = meant.match(/\d+/g) || [];
     if (kind === "number" && whyNums.length && meantNums.length && !meantNums.every((n) => whyNums.includes(n))) continue;
-    const confident = f.confidence === "high";
-    const sounds = meant === "?" ? 0 : soundSimilarity(heard, meant);
     fixes.push({
       heard,
       meant,
       kind,
-      why: text(f?.why),
+      why,
       // Ticked by default only when it is a confident, sound-alike, non-number fix.
       // Numbers, names and terms are never pre-ticked: the user knows them, the AI only guesses.
-      checked: confident && kind === "mishearing" && meant !== "?" && sounds >= 0.5,
+      checked: f.confidence === "high" && kind === "mishearing" && meant !== "?" && soundSimilarity(heard, meant) >= 0.5,
     });
     if (fixes.length >= 30) break;
   }
@@ -537,6 +523,12 @@ function numbersIn(textValue) {
   return out;
 }
 
+/** Share (0–1) of the text that sits inside quotation marks. */
+function quotedShare(paragraphsList) {
+  const all = paragraphsList.join("");
+  return all ? paragraphsList.flatMap(quotedSpans).join("").length / all.length : 0;
+}
+
 /** Standalone 뭐/이제/막 per 1,000 characters: high means the text still reads like raw speech. */
 function fillerDensity(paragraphsList) {
   const all = paragraphsList.join(" ");
@@ -546,7 +538,16 @@ function fillerDensity(paragraphsList) {
 
 const indexWithNumbers = (t) => Object.assign(indexTranscript(t), { numbers: numbersIn(t) });
 
-const numberMismatch = (sentence, index) => [...numbersIn(sentence)].some((n) => !index.numbers.has(n));
+/** Sentences the transcript doesn't back: too little support (see normalizeChapter) or a number it never states. */
+const unsupportedSentences = (texts, index, oral) =>
+  texts
+    .flatMap((p) => p.match(/[^.!?。]+[.!?。]?/g) || [])
+    .filter((s) => {
+      if (norm_(s).length < 8) return false;
+      const weak = oral ? support(s, index) < 0.45 : RISKY.test(s) && support(s, index) < 0.35;
+      return weak || [...numbersIn(s)].some((n) => !index.numbers.has(n));
+    })
+    .map((s) => s.trim());
 
 const norm_ = (s) => String(s || "").toLowerCase().replace(/[^가-힣a-z0-9]/g, "");
 const text = (v) => (v == null ? "" : String(v).trim());
@@ -579,7 +580,7 @@ function paragraphs(v) {
 }
 
 /** The epigraph and 맺는 말 are shown on their own pages, so chapters must not repeat them. */
-const reservedLines = (outline) => [...list(outline.lastWords), outline.epigraph].filter(Boolean);
+const reservedLines = (outline) => [...outline.lastWords, outline.epigraph].filter(Boolean);
 
 /** Keeps only lines found in the transcript (when an index is given). */
 const verified = (items, index) => (index ? items.filter((q) => isFromTranscript(q, index)) : items);
@@ -591,7 +592,7 @@ function normalizeOutline(d, index, maxChapters, settings) {
     .slice(0, maxChapters)
     .map((c) => ({
       title: text(c.title),
-      yearFrom: year(c.yearFrom ?? c.period),
+      yearFrom: year(c.yearFrom ?? c.period), // period: an outline saved by an older version, sent back on resume
       yearTo: year(c.yearTo),
       place: text(c.place),
       summary: text(c.summary),
@@ -620,8 +621,8 @@ function normalizeOutline(d, index, maxChapters, settings) {
     .map((t) => {
       const ch = parseInt(t.chapter, 10);
       return {
-        year: year(t.year ?? t.when),
-        approx: t.approx === true || /무렵|쯤|경/.test(text(t.year ?? t.when)),
+        year: year(t.year),
+        approx: t.approx === true || /무렵|쯤|경/.test(text(t.year)),
         chapter: ch >= 1 && ch <= chapters.length ? ch : 0,
         event: text(t.event),
       };
@@ -640,7 +641,7 @@ function normalizeOutline(d, index, maxChapters, settings) {
     subtitle: text(d.subtitle),
     subjectName: text(d.subjectName),
     birthYear: year(d.birthYear),
-    birthplace: text(d.birthplace ?? d.born),
+    birthplace: text(d.birthplace),
     epigraph,
     people: list(d.people)
       .filter((p) => p && typeof p === "object" && (text(p.name) || text(p.relation)))
@@ -697,18 +698,7 @@ function normalizeChapter(d, index, plan, outline, settings) {
   // In 구술 정리 every sentence is presented as the speaker's own words, so every sentence
   // must be supported by the transcript; otherwise only story-like phrases are checked.
   const oral = settings.voice === "oral";
-  const unsupported = [];
-  for (const p of kept) {
-    const narration = oral ? p : p.replace(/[“"「『][^”"」』]*[”"」』]/g, " ");
-    for (const s of narration.match(/[^.!?。]+[.!?。]?/g) || []) {
-      if (norm_(s).length < 8) continue;
-      const weak = oral ? support(s, index) < 0.45 : RISKY.test(s) && support(s, index) < 0.35;
-      if (weak || numberMismatch(s, index)) unsupported.push(s.trim());
-    }
-  }
-
-  const all = kept.join("");
-  const quotedShare = all ? kept.flatMap(quotedSpans).join("").length / all.length : 0;
+  const unsupported = unsupportedSentences(oral ? kept : kept.map((p) => p.replace(/[“"「『][^”"」』]*[”"」』]/g, " ")), index, oral);
 
   const q = d.pullQuote && typeof d.pullQuote === "object" ? d.pullQuote : { text: d.pullQuote };
   let pullQuote = { text: dropFillers(text(q.text)), context: text(q.context) };
@@ -735,6 +725,5 @@ function normalizeChapter(d, index, plan, outline, settings) {
     excerpt: excerptOk ? excerpt : { q: "", a: "" },
     unverified,
     unsupported: unsupported.slice(0, 8),
-    quotedShare,
   };
 }
