@@ -128,7 +128,7 @@ async function attempt(gw, models, { system, cached, userText, schema, schemaNam
     headers: {
       authorization: `Bearer ${gw.key}`,
       "content-type": "application/json",
-      "x-title": "Life Chronicle E-book",
+      "x-title": "InterviewToEbook",
     },
     body: JSON.stringify({
       ...(models.length > 1 ? { models } : { model: models[0] }),

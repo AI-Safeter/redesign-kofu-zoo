@@ -87,5 +87,5 @@ http
     }
   })
   .listen(PORT, () => {
-    console.log(`Life chronicle e-book: http://localhost:${PORT}${process.env.MOCK_AI === "1" ? "  (mock AI)" : ""}`);
+    console.log(`InterviewToEbook: http://localhost:${PORT}${process.env.MOCK_AI === "1" ? "  (mock AI)" : ""}`);
   });

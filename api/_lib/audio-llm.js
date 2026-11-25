@@ -80,7 +80,7 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
         headers: {
           authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "content-type": "application/json",
-          "x-title": "Life Chronicle E-book",
+          "x-title": "InterviewToEbook",
         },
         body: JSON.stringify({
           model,
