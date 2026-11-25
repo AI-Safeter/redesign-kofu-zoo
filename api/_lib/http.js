@@ -1,15 +1,15 @@
 // Small helpers shared by the API functions.
+import { timingSafeEqual } from "node:crypto";
 
 export function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
-  });
+  return Response.json(data, { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 }
 
 export function errorResponse(message, status = 400) {
   return json({ error: message }, status);
 }
+
+export const fail = (message, status = 500) => Object.assign(new Error(message), { status });
 
 /** Returns an error Response when the access code is required and missing/wrong, otherwise null. */
 export function checkAccess(request) {
@@ -19,17 +19,11 @@ export function checkAccess(request) {
   try {
     given = decodeURIComponent(given);
   } catch {}
-  if (!timingSafeEqual(given, required)) {
+  const [a, b] = [Buffer.from(given), Buffer.from(required)];
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return errorResponse("접근 코드가 올바르지 않습니다.", 401);
   }
   return null;
-}
-
-function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }
 
 export const isMock = () => process.env.MOCK_AI === "1";
@@ -44,7 +38,7 @@ export const isMock = () => process.env.MOCK_AI === "1";
 export function ndjsonStream(work, request) {
   const encoder = new TextEncoder();
   const abort = new AbortController();
-  request?.signal?.addEventListener?.("abort", () => abort.abort());
+  request.signal.addEventListener("abort", () => abort.abort());
   let closed = false;
   let heartbeat;
   const stream = new ReadableStream({
@@ -67,7 +61,6 @@ export function ndjsonStream(work, request) {
       } finally {
         clearInterval(heartbeat);
         if (!closed) {
-          closed = true;
           try {
             controller.close();
           } catch {}
@@ -90,11 +83,7 @@ export function ndjsonStream(work, request) {
 }
 
 function friendlyError(err) {
-  const status = err?.status;
   // Our own errors carry a Korean message; anything else is unexpected and stays in the logs.
   if (/[가-힣]/.test(err?.message || "")) return err.message;
-  if (status === 401) return "API 키가 올바르지 않습니다. 서버 환경변수를 확인해 주세요.";
-  if (status === 429) return "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.";
-  if (status === 529 || status === 503) return "AI 서버가 혼잡합니다. 잠시 후 다시 시도해 주세요.";
   return "일시적인 서버 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.";
 }

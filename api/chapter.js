@@ -7,17 +7,17 @@ export async function POST(request) {
   const denied = checkAccess(request);
   if (denied) return denied;
 
-  let input, outline, index;
+  let body, input;
   try {
-    const body = await request.json();
+    body = await request.json();
     input = readSettings(body);
-    outline = body.outline;
-    index = parseInt(body.index, 10);
-    if (!outline || !Array.isArray(outline.chapters) || !(index >= 0 && index < outline.chapters.length)) {
-      throw Object.assign(new Error("잘못된 장 정보입니다."), { status: 400 });
-    }
   } catch (err) {
     return errorResponse(err.message || "잘못된 요청입니다.", err.status || 400);
+  }
+  const { outline } = body;
+  const index = parseInt(body.index, 10);
+  if (!Array.isArray(outline?.chapters) || !(index >= 0 && index < outline.chapters.length)) {
+    return errorResponse("잘못된 장 정보입니다.");
   }
 
   return ndjsonStream((send, signal) =>

@@ -4,8 +4,8 @@
 // Engines, in order:
 //   OpenRouter audio models (Qwen 3.8 Omni Flash, then Gemini 2.5 Flash) when OPENROUTER_API_KEY
 //     is set — far more accurate on Korean interviews, about 2 cents per hour of audio;
-//   Whisper as the fallback: groq (free tier, large-v3) or openai (paid, whisper-1).
-// TRANSCRIBE_PROVIDER=groq|openai|openrouter forces one.
+//   Groq Whisper large-v3 (free tier) as the fallback.
+// TRANSCRIBE_PROVIDER=groq|openrouter forces one.
 import { checkAccess, errorResponse, json, isMock } from "./_lib/http.js";
 import { mockTranscribe } from "./_lib/mock.js";
 import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels } from "./_lib/audio-llm.js";
@@ -13,41 +13,19 @@ import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels 
 const MAX_BYTES = 4_400_000;
 const TRY_AGAIN = "음성 인식에 잠시 문제가 생겼어요. 잠시 후 다시 눌러 주세요.";
 
-const PROVIDERS = {
-  groq: {
-    name: "Groq",
-    url: "https://api.groq.com/openai/v1/audio/transcriptions",
-    keyEnv: "GROQ_API_KEY",
-    model: () => process.env.GROQ_TRANSCRIBE_MODEL || "whisper-large-v3",
-    altModel: () => "whisper-large-v3-turbo",
-  },
-  openai: {
-    name: "OpenAI",
-    url: "https://api.openai.com/v1/audio/transcriptions",
-    keyEnv: "OPENAI_API_KEY",
-    model: () => process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1",
-  },
-};
-
 /** Whether this deployment can transcribe at all. */
 export function canTranscribe() {
-  return audioModelsEnabled() || Boolean(transcriptionProvider());
+  return audioModelsEnabled() || groqEnabled();
 }
 
-function transcriptionProvider() {
-  const wanted = (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase();
-  if (PROVIDERS[wanted] && process.env[PROVIDERS[wanted].keyEnv]) return PROVIDERS[wanted];
-  if (process.env.GROQ_API_KEY) return PROVIDERS.groq;
-  if (process.env.OPENAI_API_KEY) return PROVIDERS.openai;
-  return null;
-}
+const groqEnabled = () => Boolean(process.env.GROQ_API_KEY) && (process.env.TRANSCRIBE_PROVIDER || "").toLowerCase() !== "openrouter";
 
 export async function POST(request) {
   const denied = checkAccess(request);
   if (denied) return denied;
 
   const url = new URL(request.url);
-  const index = parseInt(url.searchParams.get("index") || "0", 10) || 0;
+  const index = parseInt(url.searchParams.get("index"), 10) || 0;
   const audio = await request.arrayBuffer();
   if (audio.byteLength === 0) return errorResponse("오디오 데이터가 비어 있습니다.");
   if (audio.byteLength > MAX_BYTES) return errorResponse("오디오 조각이 너무 큽니다.", 413);
@@ -61,7 +39,7 @@ export async function POST(request) {
   // The end of the previous piece's text, as context for the audio models.
   const prev = (url.searchParams.get("prev") || "").slice(-300).trim();
 
-  const provider = transcriptionProvider();
+  const groq = groqEnabled();
   if (audioModelsEnabled() && audioFormat(type, name)) {
     try {
       // The second model runs at the same time; its text only feeds the proofreading step.
@@ -73,27 +51,25 @@ export async function POST(request) {
       // The second opinion only helps proofreading: wait at most 20 s more for it.
       const alt = await Promise.race([altPromise, new Promise((r) => setTimeout(() => r(null), 20_000))]);
       const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
-      return json({ text: tidy(main.text), engine: main.model, alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
+      return json({ text: tidy(main.text), alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
     } catch (err) {
       console.warn("Audio models failed, falling back to Whisper:", err.message);
-      if (!provider) return errorResponse("음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.", 502);
+      if (!groq) return errorResponse("음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.", 502);
     }
   }
-  if (!provider) {
-    return errorResponse("음성 인식용 API 키가 서버에 설정되지 않았습니다. 녹취록을 직접 붙여넣어 주세요.", 500);
-  }
+  if (!groq) return errorResponse("음성 인식용 API 키가 서버에 설정되지 않았습니다.", 500);
 
-  const first = await recognize(provider, { audio, type, name, model: provider.model(), prompt: hint, signal: request.signal });
+  const first = await recognize({ audio, type, name, model: process.env.GROQ_TRANSCRIBE_MODEL || "whisper-large-v3", prompt: hint, signal: request.signal });
   if (first.error) return first.error;
   let best = first;
 
   // Whisper sometimes skips speech (one long segment with very little text) or loops.
-  // Try again once without the hint, on the alternative model where there is one.
+  // Try again once without the hint, on the other Whisper model.
   if (suspicious(first.segments)) {
-    const second = await recognize(provider, { audio, type, name, model: provider.altModel?.() || provider.model(), prompt: "", signal: request.signal });
+    const second = await recognize({ audio, type, name, model: "whisper-large-v3-turbo", prompt: "", signal: request.signal });
     if (!second.error && score(second) > score(first)) best = second;
   }
-  return json({ text: buildText(best), engine: provider.name });
+  return json({ text: buildText(best) });
 }
 
 /** Starts a new paragraph at a sentence end every ~400 characters. */
@@ -112,31 +88,30 @@ function paragraphs(text) {
   return out;
 }
 
-async function recognize(provider, { audio, type, name, model, prompt, signal }) {
-  const verbose = !/gpt-4o/.test(model); // gpt-4o transcription models only return plain JSON
+async function recognize({ audio, type, name, model, prompt, signal }) {
   const form = new FormData();
   form.append("file", new Blob([audio], { type }), name);
   form.append("model", model);
   form.append("language", "ko");
-  form.append("response_format", verbose ? "verbose_json" : "json");
+  form.append("response_format", "verbose_json");
   if (prompt) form.append("prompt", prompt);
 
   let res;
   try {
-    res = await fetch(provider.url, {
+    res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
-      headers: { authorization: `Bearer ${process.env[provider.keyEnv]}` },
+      headers: { authorization: `Bearer ${process.env.GROQ_API_KEY}` },
       body: form,
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
     });
   } catch (err) {
-    console.error(`${provider.name} unreachable`, err);
+    console.error("Groq unreachable", err);
     return { error: errorResponse("음성 인식 서버에 연결하지 못했어요. 잠시 후 다시 눌러 주세요.", 502) };
   }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    console.error(`${provider.name} transcription failed`, res.status, detail);
+    console.error("Groq transcription failed", res.status, detail);
     if (res.status === 429) {
       // Free-tier rate limit: tell the browser how long to wait before retrying this chunk.
       const retryAfter = Math.min(120, Math.max(3, Math.ceil(Number(res.headers.get("retry-after")) || 20)));
@@ -159,8 +134,7 @@ async function recognize(provider, { audio, type, name, model, prompt, signal })
 
 /** Signs that Whisper skipped or looped: long stretches with almost no text, or repetition. */
 function suspicious(segments) {
-  if (!segments) return false;
-  return segments.some((seg) => {
+  return segments?.some((seg) => {
     const secs = seg.end - seg.start;
     const chars = String(seg.text || "").replace(/\s/g, "").length;
     return (secs >= 8 && chars / secs < 2) || seg.compression_ratio > 2.4;
@@ -169,7 +143,7 @@ function suspicious(segments) {
 
 /** Higher is better: characters per second of audio, minus a penalty for each bad segment. */
 function score(result) {
-  if (!result.segments || !result.segments.length) return result.text.length;
+  if (!result.segments?.length) return result.text.length;
   const span = result.segments[result.segments.length - 1].end - result.segments[0].start || 1;
   const bad = result.segments.filter((s) => suspicious([s])).length;
   return result.text.replace(/\s/g, "").length / span - bad * 2;
@@ -184,7 +158,7 @@ const OUTRO = /^(감사합니다|시청해 ?주셔서 감사합니다|구독과 
  */
 function buildText(result) {
   const segs = result.segments;
-  if (!segs || !segs.length) return collapseRepeats(result.text);
+  if (!segs?.length) return collapseRepeats(result.text);
   const kept = segs.filter((seg, i) => {
     const t = String(seg.text || "").trim();
     if (!t) return false;

@@ -1,15 +1,15 @@
 // Checks that quoted words really appear in the interview transcript.
 // Free models in particular tend to invent dialogue; the book must only quote what was said.
 
-/** Hangul, Latin letters and digits only: ignores spacing, punctuation and line breaks. */
+// Hangul, Latin letters and digits only: ignores spacing, punctuation and line breaks.
 // Standalone hesitation sounds (음, 어, 으음, 아) are ignored on both sides of a comparison,
 // so a quote with fillers removed still matches the transcript.
 const FILLERS = /(^|[\s,.])(음+|어+|으음|아+)(?=[\s,.]|$)/g;
 const norm = (s) => String(s || "").toLowerCase().replace(FILLERS, "$1").replace(/[^가-힣a-z0-9]/g, "");
 
-function grams(s, n = 3) {
+function grams(s) {
   const out = new Set();
-  for (let i = 0; i + n <= s.length; i++) out.add(s.slice(i, i + n));
+  for (let i = 0; i + 3 <= s.length; i++) out.add(s.slice(i, i + 3));
   return out;
 }
 
@@ -24,22 +24,23 @@ export function indexTranscript(transcript) {
  * fillers such as 음/어/그러니까, or a repeated word) are allowed; changed words are not.
  * Spacing and punctuation are ignored.
  */
+const MIN = 4; // shortest stretch that counts as matching
+const GAP = 25; // most transcript characters that may be skipped between stretches
+
 export function isFromTranscript(quote, index) {
   const q = norm(quote);
   const t = index.text;
   if (!q) return false;
   if (t.includes(q)) return true;
   if (q.length < 8) return false;
-  const MIN = 4; // shortest stretch that counts as matching
-  const GAP = 25; // most transcript characters that may be skipped between stretches
   // Try every place the opening stretch occurs, since a phrase can appear more than once.
   for (let start = t.indexOf(q.slice(0, MIN)); start >= 0; start = t.indexOf(q.slice(0, MIN), start + 1)) {
-    if (alignFrom(q, t, start, MIN, GAP)) return true;
+    if (alignFrom(q, t, start)) return true;
   }
   return false;
 }
 
-function alignFrom(q, t, start, MIN, GAP) {
+function alignFrom(q, t, start) {
   let i = 0; // position in the quote
   let pos = start; // position in the transcript
   while (i < q.length) {
@@ -64,11 +65,7 @@ function alignFrom(q, t, start, MIN, GAP) {
 
 /** Text inside “…”, "…", 「…」 or 『…』 that is long enough to be a quotation. */
 export function quotedSpans(paragraph) {
-  const spans = [];
-  const re = /[“"「『]([^”"」』]{6,})[”"」』]/g;
-  let m;
-  while ((m = re.exec(paragraph))) spans.push(m[1].trim());
-  return spans;
+  return [...paragraph.matchAll(/[“"「『]([^”"」』]{6,})[”"」』]/g)].map((m) => m[1].trim());
 }
 
 /** Share of shared three-character sequences (0–1); used to drop near-duplicate paragraphs. */

@@ -1,17 +1,17 @@
 /* Builder page ("새 책 만들기").
    A working tool, not a landing page: white page, plain sections divided by space and one
    hairline, no decorative cards or shadows. Boxes appear only around things you act on (the
-   drop area, choices, suggestions). Near-black text in Pretendard; one blue for actions.
+   drop area, choices). Near-black text in Pretendard; one blue for actions.
    Layout: phones get one column; from 1024px a sidebar (name, steps, 내 서재) sits beside the
-   form, and step 2 puts the transcript and the AI suggestions side by side. */
+   form. */
 
 :root {
   --page: #ffffff;
   --side: #f6f6f7;          /* sidebar */
-  --well: #f3f3f4;          /* drop area, suggestion panel */
+  --well: #f3f3f4;          /* drop area */
   --ink: #18181b;
   --ink-2: #3f3f46;
-  --ink-3: #6b6b74;         /* hints, meta, placeholders */
+  --ink-3: #6b6b74;         /* hints, meta */
   --line: #e6e6e9;          /* hairlines */
   --field: #d4d4d8;         /* field borders */
   --primary: #0b6bcb;
@@ -50,53 +50,16 @@ body {
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---------- Shell ---------- */
-.side {
-  padding-block: 12px 8px;
+.side, .main {
   padding-left: max(20px, env(safe-area-inset-left, 0px));
   padding-right: max(20px, env(safe-area-inset-right, 0px));
 }
+.side { padding-block: 12px 8px; }
 .side__brand { margin: 0; font: inherit; }
 .brand { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ink); text-decoration: none; font-weight: 700; letter-spacing: -0.02em; }
 .steps-nav { display: none; }
 
-.main {
-  padding-block: 8px 48px;
-  padding-left: max(20px, env(safe-area-inset-left, 0px));
-  padding-right: max(20px, env(safe-area-inset-right, 0px));
-}
-
-@media (min-width: 1024px) {
-  .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
-  .side {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-    background: var(--side);
-    border-right: 1px solid var(--line);
-    padding: 20px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
-  }
-  .side__brand { padding: 0 8px; }
-  .steps-nav { display: grid; gap: 2px; }
-  .steps-nav a {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px;
-    border-radius: 6px;
-    color: var(--ink-2);
-    font-size: 0.94rem;
-    text-decoration: none;
-  }
-  .steps-nav a:hover { background: var(--well); color: var(--ink); }
-  .steps-nav a span { width: 20px; color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: center; }
-  .steps-nav a[aria-current] { background: var(--page); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
-  .steps-nav a[aria-current] span { color: var(--primary); }
-  .main { padding: 40px 56px 64px; max-width: 1000px; }
-}
+.main { padding-block: 8px 48px; }
 
 /* ---------- Library (sidebar on wide screens) ---------- */
 .shelf { margin: 8px 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
@@ -109,10 +72,6 @@ body {
 .library__meta { display: block; font-size: 0.8rem; color: var(--ink-3); }
 .library a.library__open:hover .library__name { text-decoration: underline; text-underline-offset: 3px; }
 .library__actions { display: flex; gap: 6px; }
-@media (min-width: 1024px) {
-  .shelf { margin: 0; padding: 0 8px; border: 0; }
-  .library__actions .btn { min-height: 32px; padding: 4px 10px; font-size: 0.8rem; }
-}
 
 /* ---------- Sections ---------- */
 .form-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -121,12 +80,6 @@ body {
 .step:first-child { border-top: 0; padding-top: 8px; }
 .step__title { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; font-size: 1.2rem; font-weight: 700; letter-spacing: -0.025em; scroll-margin-top: 24px; }
 .step__num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: var(--ink); color: var(--page); font-size: 0.78rem; font-weight: 700; }
-@media (min-width: 1024px) {
-  .step { padding-block: 40px; }
-  .step:first-child { padding-top: 0; }
-  .step__title { font-size: 1.35rem; }
-  .step__num { display: none; } /* the sidebar already numbers the steps */
-}
 
 /* ---------- Messages ---------- */
 .notice, .banner { background: var(--primary-tint); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.95rem; }
@@ -141,9 +94,8 @@ body {
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; min-width: 0; }
 .field__label { font-weight: 600; font-size: 0.92rem; }
 .field__label em { font-style: normal; font-weight: 400; color: var(--ink-3); }
-.field__hint { font-size: 0.84rem; color: var(--ink-3); line-height: 1.55; }
 
-input[type="text"], input[type="password"], select, textarea {
+input[type="text"], input[type="password"], select {
   font: 400 1rem/1.5 var(--font);
   color: var(--ink);
   background: var(--page);
@@ -154,14 +106,10 @@ input[type="text"], input[type="password"], select, textarea {
   width: 100%;
   min-width: 0;
 }
-input::placeholder, textarea::placeholder { color: var(--ink-3); }
-input:focus, select:focus, textarea:focus { outline: 2px solid transparent; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-textarea { resize: vertical; line-height: 1.75; }
-[aria-invalid="true"] { border-color: var(--danger); }
+input:focus, select:focus { outline: 2px solid transparent; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
-@media (min-width: 1024px) { #hint { max-width: 36em; } }
 
 /* Writing style */
 .choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -199,7 +147,6 @@ textarea { resize: vertical; line-height: 1.75; }
 .file-info { margin: 0 0 18px; font-size: 0.92rem; color: var(--ink-2); word-break: break-all; }
 .file-info.is-error { color: var(--danger); font-weight: 500; }
 #tx-resume { margin: 0 0 16px; font-size: 0.92rem; }
-@media (min-width: 1024px) { .dropzone { padding: 44px 24px; } }
 
 /* ---------- Buttons ---------- */
 .primary {
@@ -225,9 +172,8 @@ textarea { resize: vertical; line-height: 1.75; }
   min-height: 44px;
   cursor: pointer;
 }
-.btn:hover:not(:disabled) { background: var(--well); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: var(--danger-tint); }
+.btn:hover { background: var(--well); }
+.btn--danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-tint); }
 .link-btn { display: block; margin: 8px auto 0; background: none; border: 0; color: var(--ink-3); font: 0.92rem var(--font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 44px; }
 .link-btn:hover { color: var(--ink); }
 
@@ -237,11 +183,6 @@ textarea { resize: vertical; line-height: 1.75; }
 
 /* ---------- Main action & book progress ---------- */
 .actions { padding-top: 24px; border-top: 1px solid var(--line); }
-@media (min-width: 1024px) {
-  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
-  .actions .error { flex-basis: 100%; }
-  .actions .primary--big { width: auto; padding: 14px 36px; }
-}
 
 .make-progress { margin-top: 24px; max-width: 46em; scroll-margin-top: 24px; }
 .overall { margin-bottom: 16px; }
@@ -261,8 +202,62 @@ textarea { resize: vertical; line-height: 1.75; }
 .make-steps li.is-failed .dot { border-color: var(--danger); color: var(--danger); }
 .make-steps li.is-failed .dot::before { content: "!"; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (min-width: 1024px) { .make-progress .primary--big { width: auto; padding: 14px 36px; } .make-progress .link-btn { margin-left: 0; } }
+
+/* ---------- Wide screens: sidebar beside the form ---------- */
+@media (min-width: 1024px) {
+  .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
+  .side {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--side);
+    border-right: 1px solid var(--line);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .side__brand { padding: 0 8px; }
+  .steps-nav { display: grid; gap: 2px; }
+  .steps-nav a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 6px;
+    color: var(--ink-2);
+    font-size: 0.94rem;
+    text-decoration: none;
+  }
+  .steps-nav a:hover { background: var(--well); color: var(--ink); }
+  .steps-nav a span { width: 20px; color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: center; }
+  .steps-nav a[aria-current] { background: var(--page); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+  .steps-nav a[aria-current] span { color: var(--primary); }
+  .main { padding: 40px 56px 64px; max-width: 1000px; }
+
+  .shelf { margin: 0; padding: 0 8px; border: 0; }
+  .library__actions .btn { min-height: 32px; padding: 4px 10px; font-size: 0.8rem; }
+
+  .step { padding-block: 40px; }
+  .step:first-child { padding-top: 0; }
+  .step__title { font-size: 1.35rem; }
+  .step__num { display: none; } /* the sidebar already numbers the steps */
+
+  #hint { max-width: 36em; }
+  .dropzone { padding: 44px 24px; }
+
+  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
+  .actions .error { flex-basis: 100%; }
+  .primary--big { width: auto; padding: 14px 36px; }
+  .make-progress .link-btn { margin-left: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* The access code, asked once on the first visit */
+.gate { border: 0; border-radius: 12px; padding: 24px; width: min(360px, calc(100% - 32px)); background: var(--page); color: var(--ink); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2); }
+.gate::backdrop { background: rgba(0, 0, 0, 0.45); }
+.gate .primary { width: 100%; }

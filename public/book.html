@@ -21,21 +21,10 @@
   <script>
     (async function () {
       var root = document.getElementById("book");
-      var params = new URLSearchParams(location.search);
-      var id = params.get("id");
-      var book = null;
-      var editable = false;
+      // The owner's copy, from this browser's library: editable and publishable.
+      var id = new URLSearchParams(location.search).get("id");
+      var book = id ? Library.get(id) : null;
       var warned = false;
-
-      if (params.has("sample") || id === "sample") {
-        try {
-          var res = await fetch("/books/sample.json");
-          book = res.ok ? await res.json() : null;
-        } catch (e) {}
-      } else if (id) {
-        book = Library.get(id);
-        editable = !!book;
-      }
 
       if (!book) {
         root.innerHTML =
@@ -47,22 +36,18 @@
       }
 
       var config = {};
-      if (editable) {
-        try { config = await (await fetch("/api/config")).json(); } catch (e) {}
-      }
+      try { config = await (await fetch("/api/config")).json(); } catch (e) {}
 
       ChronicleBook.mount(root, book, {
         homeHref: "/",
-        onChange: editable
-          ? function (b) {
-              if (!Library.save(b) && !warned) {
-                warned = true;
-                alert("브라우저 저장 공간이 부족해 고친 내용을 저장하지 못했습니다. 서재에서 ‘파일로 저장’으로 책을 내려받아 두세요.");
-              }
-            }
-          : null,
-        onPublish: editable && config.publishing ? publish : null,
-        onUnpublish: editable && config.publishing ? unpublish : null,
+        onChange: function (b) {
+          if (!Library.save(b) && !warned) {
+            warned = true;
+            alert("브라우저 저장 공간이 부족해 고친 내용을 저장하지 못했습니다. 서재에서 ‘파일로 저장’으로 책을 내려받아 두세요.");
+          }
+        },
+        onPublish: config.publishing ? publish : null,
+        onUnpublish: config.publishing ? unpublish : null,
         publishedUrl: book.published ? linkTo(book.published.id) : null,
       });
 

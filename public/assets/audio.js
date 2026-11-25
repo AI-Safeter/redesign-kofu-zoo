@@ -103,7 +103,6 @@
   async function prepare(file) {
     // Refuse very long recordings before decoding them, which could crash a phone's browser.
     if ((await metadataSeconds(file)) > MAX_SEC) throw new Error(TOO_LONG);
-    var direct = file.size <= DIRECT_MAX && DIRECT_TYPES.test(file.name);
     var buffer;
     try {
       buffer = await decode(await file.arrayBuffer());
@@ -115,8 +114,8 @@
     var duration = buffer.duration;
     if (duration > MAX_SEC) throw new Error(TOO_LONG);
     // Small files the API accepts as-is: send the original (better quality, fewer requests).
-    if (direct) {
-      return { duration: duration, chunks: [whole(file)] };
+    if (file.size <= DIRECT_MAX && DIRECT_TYPES.test(file.name)) {
+      return { duration: duration, chunks: [{ getBlob: function () { return file; }, name: file.name, type: file.type || "audio/mpeg" }] };
     }
 
     var rate = buffer.sampleRate;
@@ -135,10 +134,6 @@
       pos = end;
     }
     return { duration: duration, chunks: chunks };
-  }
-
-  function whole(file) {
-    return { getBlob: function () { return file; }, name: file.name, type: file.type || "audio/mpeg" };
   }
 
   function piece(samples, from, to, rate, n) {

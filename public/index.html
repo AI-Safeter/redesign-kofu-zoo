@@ -56,7 +56,7 @@
 
         <label class="field">
           <span class="field__label">녹음에 나오는 이름·지명·용어 <em>(선택)</em></span>
-          <input id="hint" type="text" placeholder="예: 이옥분, 김재곤, 서천, 평화시장, 10회기" maxlength="300">
+          <input id="hint" type="text" maxlength="300">
         </label>
 
       </section>
@@ -66,23 +66,23 @@
         <div class="grid2">
           <label class="field">
             <span class="field__label">주인공 이름</span>
-            <input id="subject" type="text" placeholder="예: 이옥분" maxlength="60" autocomplete="off">
+            <input id="subject" type="text" maxlength="60" autocomplete="off">
           </label>
           <label class="field">
             <span class="field__label">직함·소속 <em>(선택)</em></span>
-            <input id="role" type="text" placeholder="예: 은퇴한 초등학교 교사, ○○극단 대표" maxlength="80" autocomplete="off">
+            <input id="role" type="text" maxlength="80" autocomplete="off">
           </label>
           <label class="field">
             <span class="field__label">인터뷰한 사람</span>
-            <input id="interviewer" type="text" placeholder="예: 큰손녀 김하은, 기록 담당 연구원" maxlength="60" autocomplete="off">
+            <input id="interviewer" type="text" maxlength="60" autocomplete="off">
           </label>
           <label class="field">
             <span class="field__label">인터뷰 날짜</span>
-            <input id="date" type="text" placeholder="예: 2026년 11월" maxlength="40">
+            <input id="date" type="text" maxlength="40">
           </label>
           <label class="field">
             <span class="field__label">인터뷰 장소</span>
-            <input id="place" type="text" placeholder="예: 서천 할머니 댁, ○○문화센터" maxlength="60">
+            <input id="place" type="text" maxlength="60">
           </label>
         </div>
 
@@ -118,10 +118,6 @@
               <option value="10">최대 10장</option>
             </select>
           </label>
-          <label class="field" id="access-field" hidden>
-            <span class="field__label">접근 코드</span>
-            <input id="access" type="password" autocomplete="off">
-          </label>
         </div>
       </section>
       </fieldset>
@@ -144,6 +140,17 @@
 
   </main>
 </div>
+
+  <dialog id="gate" class="gate">
+    <form id="gate-form">
+      <label class="field">
+        <span class="field__label">접근 코드</span>
+        <input id="gate-code" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="gate-error" class="error" role="alert" hidden></p>
+      <button type="submit" class="primary">확인</button>
+    </form>
+  </dialog>
 
   <script src="/assets/library.js"></script>
   <script src="/assets/audio.js"></script>

@@ -1,6 +1,5 @@
 // Turns an interview transcript into a life-chronicle e-book, with Claude Sonnet 5.5 through
-// Nous Portal (NOUS_API_KEY), free OpenRouter models as the fallback, or Claude through
-// Anthropic's own API (ANTHROPIC_API_KEY).
+// Nous Portal (NOUS_API_KEY) and free OpenRouter models as the fallback.
 // Two steps: plan the book (outline), then write each chapter in its own request.
 // Every request for one book shares the same system prompt + transcript, which is
 // marked for prompt caching so the transcript is billed in full only once or twice.
@@ -9,37 +8,16 @@
 // found in the transcript, ages are computed from years here (not by the model), and
 // near-duplicate paragraphs are dropped.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { fail } from "./http.js";
 import { callGateways, gateways } from "./openrouter.js";
 import { indexTranscript, isFromTranscript, quotedSpans, similarity, support } from "./verify.js";
 
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
-const EFFORT = process.env.CLAUDE_EFFORT || "high";
 const MAX_TRANSCRIPT_CHARS = 400_000;
 // The most chapters a book can have; the interview's length usually sets fewer (chapterLimit).
 const MAX_CHAPTERS = 12;
 
-/**
- * "anthropic" (Claude through Anthropic's own API), "gateway" (Nous Portal and/or OpenRouter),
- * or null when no writing key is configured.
- */
-export function writingProvider() {
-  const wanted = (process.env.WRITER_PROVIDER || "").toLowerCase();
-  const hasGateway = gateways().length > 0;
-  if (wanted === "gateway" && hasGateway) return "gateway";
-  if (wanted === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (hasGateway) return "gateway";
-  return null;
-}
-
-let client;
-function getClient() {
-  client ??= new Anthropic();
-  return client;
-}
-
-const fail = (message, status = 500) => Object.assign(new Error(message), { status });
+/** Whether a writing key is configured. */
+export const canWrite = () => gateways().length > 0;
 
 // ---------- Input validation ----------
 
@@ -127,8 +105,6 @@ ${settings.voice === "oral"
 ${settings.terms ? `- Correct spellings of names and terms in this recording (use exactly these): ${settings.terms}` : ""}`.trim();
 }
 
-const transcriptBlock = (transcript) => `<transcript>\n${transcript}\n</transcript>`;
-
 function outlineRequest(settings, transcript) {
   return `Plan the e-book from the interview above. First decide what kind of interview it is, then gather the evidence, then write the short framing texts.
 
@@ -159,7 +135,7 @@ function outlineRequest(settings, transcript) {
 ${FAITHFULNESS_CHECKLIST}`;
 }
 
-function chapterRequest(outline, index, transcript, settings = {}) {
+function chapterRequest(outline, index, transcript, settings) {
   const ch = outline.chapters[index];
   const plan = outline.chapters
     .map((c, i) => `${i + 1}. ${c.title} (${[c.yearFrom, c.yearTo].filter(Boolean).join("–")}) — ${c.summary}`)
@@ -255,76 +231,21 @@ const FUNCTION_BUDGET_MS = 270_000;
 // Retries are only started while this much of the budget is left.
 const RETRY_CUTOFF_MS = 150_000;
 
-async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal, deadline }) {
+async function callModel({ settings, transcript, userText, schema, schemaName, onProgress, signal, deadline = Date.now() + FUNCTION_BUDGET_MS }) {
   // Stop this call when the function's time is nearly up, keeping earlier results.
-  if (deadline) {
-    const left = deadline - Date.now();
-    if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
-    signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(left)]) : AbortSignal.timeout(left);
-  }
-  const provider = writingProvider();
-  if (!provider) throw fail("글쓰기용 API 키(NOUS_API_KEY, OPENROUTER_API_KEY 또는 ANTHROPIC_API_KEY)가 서버에 설정되지 않았습니다.");
-  if (provider === "gateway") {
-    return callGateways({
-      deadline,
-      system: systemPrompt(settings),
-      cached: transcriptBlock(transcript),
-      userText,
-      schema,
-      schemaName,
-      onProgress,
-      signal,
-    });
-  }
-  return callClaude({ settings, transcript, userText, schema, onProgress, signal });
-}
-
-async function callClaude({ settings, transcript, userText, schema, onProgress, signal }) {
-  const stream = getClient().beta.messages.stream(
-    {
-    model: MODEL,
-    max_tokens: 32000,
-    // If a safety classifier declines, retry on Anthropic's recommended fallback model.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    thinking: { type: "adaptive" },
-    output_config: { effort: EFFORT, format: { type: "json_schema", schema } },
-    system: [
-      { type: "text", text: systemPrompt(settings) },
-      { type: "text", text: transcriptBlock(transcript), cache_control: { type: "ephemeral" } },
-    ],
-    messages: [{ role: "user", content: userText }],
-    },
-    { signal },
-  );
-
-  let chars = 0;
-  let lastSent = 0;
-  stream.on("text", (delta) => {
-    chars += delta.length;
-    if (chars - lastSent > 200) {
-      lastSent = chars;
-      onProgress?.({ type: "progress", chars });
-    }
+  const left = deadline - Date.now();
+  if (left < 20_000) throw fail("시간이 부족해 이 단계를 건너뜁니다.", 504);
+  if (!canWrite()) throw fail("글쓰기용 API 키(NOUS_API_KEY 또는 OPENROUTER_API_KEY)가 서버에 설정되지 않았습니다.");
+  return callGateways({
+    deadline,
+    system: systemPrompt(settings),
+    cached: `<transcript>\n${transcript}\n</transcript>`,
+    userText,
+    schema,
+    schemaName,
+    onProgress,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(left)]),
   });
-
-  const message = await stream.finalMessage();
-  if (message.stop_reason === "refusal") throw fail("AI가 이 내용의 처리를 거절했습니다.", 422);
-  if (message.stop_reason === "max_tokens") throw fail("결과가 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요.");
-
-  // After a server-side fallback, content holds the declined model's partial output, then a
-  // "fallback" block, then the fallback model's full answer: keep only what follows the last one.
-  const lastFallback = message.content.map((b) => b.type).lastIndexOf("fallback");
-  const text = message.content
-    .slice(lastFallback + 1)
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-  try {
-    return { data: JSON.parse(text), model: message.model };
-  } catch {
-    throw fail("AI 응답을 해석하지 못했습니다. 다시 시도해 주세요.");
-  }
 }
 
 /**
@@ -372,7 +293,7 @@ function assignSpans(outline, transcript) {
 }
 
 export async function writeOutline({ settings, transcript, onProgress, signal }) {
-  const { data, model } = await callModel({
+  const { data } = await callModel({
     settings,
     transcript,
     userText: outlineRequest(settings, transcript),
@@ -380,24 +301,20 @@ export async function writeOutline({ settings, transcript, onProgress, signal })
     schemaName: "book_outline",
     onProgress,
     signal,
-    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const index = indexWithNumbers(transcript);
   const outline = normalizeOutline(data, index, chapterLimit(settings, transcript), settings);
   if (settings.voice === "oral") assignSpans(outline, transcript);
   // Sentences in the framing texts that the interview doesn't support, for the family to check.
-  outline.frameUnsupported = [...outline.prologue, ...outline.epilogue]
-    .flatMap((p) => p.match(/[^.!?。]+[.!?。]?/g) || [])
-    .filter((s) => norm_(s).length >= 8 && ((RISKY.test(s) && support(s, index) < 0.35) || numberMismatch(s, index)))
-    .map((s) => s.trim());
+  outline.frameUnsupported = unsupportedSentences([...outline.prologue, ...outline.epilogue], index);
   if (outline.chapters.length === 0) throw fail("목차를 만들지 못했습니다. 다시 시도해 주세요.");
-  return { outline, model };
+  return { outline };
 }
 
 export async function writeChapter({ settings, transcript, outline, index: chapterIndex, onProgress, signal }) {
   const started = Date.now();
   const deadline = started + FUNCTION_BUDGET_MS;
-  const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal?.aborted;
+  const canRetry = () => Date.now() - started < RETRY_CUTOFF_MS && !signal.aborted;
   outline = normalizeOutline(outline, null, MAX_CHAPTERS, settings); // the browser sends it back; never trust its shape
   if (!outline.chapters[chapterIndex]) throw fail("잘못된 장 번호입니다.", 400);
   const transcriptIndex = indexWithNumbers(transcript);
@@ -405,24 +322,21 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
   const request = chapterRequest(outline, chapterIndex, transcript, settings);
   const ask = (feedback) =>
     callModel({ settings, transcript, userText: request + feedback, schema: CHAPTER_SCHEMA, schemaName: "book_chapter", onProgress, signal, deadline });
-  let { data, model } = await ask("");
+  const { data } = await ask("");
   let chapter = normalizeChapter(data, transcriptIndex, plan, outline, settings);
   // Asks once more with feedback; keeps the new draft only when it has text and `better` holds.
   const tryAgain = async (feedback, better) => {
     const retry = await ask("\n\n" + feedback).catch(() => null);
-    if (!retry) return false;
+    if (!retry) return;
     const again = normalizeChapter(retry.data, transcriptIndex, plan, outline, settings);
-    if (!again.paragraphs.length || !better(again)) return false;
-    chapter = again;
-    model = retry.model;
-    return true;
+    if (again.paragraphs.length && better(again)) chapter = again;
   };
 
   // A chapter that is mostly pasted quotations is not writing.
-  if (settings.voice !== "oral" && chapter.quotedShare > 0.45 && canRetry()) {
+  if (settings.voice !== "oral" && quotedShare(chapter.paragraphs) > 0.45 && canRetry()) {
     await tryAgain(
-      `Your previous draft was ${Math.round(chapter.quotedShare * 100)}% quotations. Rewrite it mostly in your own narration, with at most two short quotations.`,
-      (again) => again.quotedShare < chapter.quotedShare,
+      `Your previous draft was ${Math.round(quotedShare(chapter.paragraphs) * 100)}% quotations. Rewrite it mostly in your own narration, with at most two short quotations.`,
+      (again) => quotedShare(again.paragraphs) < quotedShare(chapter.paragraphs),
     );
   }
   // 구술 정리 that still reads like raw speech ("뭐 … 이제 … 막") gets one more editing pass.
@@ -446,18 +360,16 @@ export async function writeChapter({ settings, transcript, outline, index: chapt
     const share = (m) => m.join("").length / Math.max(1, passageSentences.join("").length);
     let missing = missingFrom(chapter);
     if (share(missing) > 0.2 && canRetry()) {
-      const before = chapter;
-      const replaced = await tryAgain(
+      await tryAgain(
         `Your previous draft left out parts of the passage. Include all of it, edited for reading, in order — in particular:\n${missing.map((m) => `- ${m}`).join("\n")}`,
-        (again) => share(missingFrom(again)) < share(missing) && again.unsupported.length <= before.unsupported.length + 1,
+        (again) => share(missingFrom(again)) < share(missing) && again.unsupported.length <= chapter.unsupported.length + 1,
       );
-      if (replaced) missing = missingFrom(chapter);
+      missing = missingFrom(chapter);
     }
     chapter.missing = missing.slice(0, 8);
   }
-  delete chapter.quotedShare;
   if (chapter.paragraphs.length === 0) throw fail("이 장의 본문을 받지 못했습니다. 다시 시도해 주세요.");
-  return { chapter, model };
+  return { chapter };
 }
 
 // ---------- Proofreading the transcript ----------
@@ -482,7 +394,7 @@ const FIXES_SCHEMA = obj({
  * whether it should be ticked by default.
  */
 export async function findFixes({ settings, transcript, alt, onProgress, signal }) {
-  const { data, model } = await callModel({
+  const { data } = await callModel({
     settings,
     transcript,
     userText: `Proofread the transcript above for speech-recognition errors only.
@@ -511,11 +423,10 @@ At most 30 items; [] if there are none.`,
     schemaName: "transcript_fixes",
     onProgress,
     signal,
-    deadline: Date.now() + FUNCTION_BUDGET_MS,
   });
   const seen = new Set();
   const fixes = [];
-  for (const f of list(data?.fixes)) {
+  for (const f of list(data.fixes)) {
     let heard = text(f?.heard);
     let meant = text(f?.meant);
     if (!heard || !meant || heard === meant || heard.length > 40) continue;
@@ -526,32 +437,29 @@ At most 30 items; [] if there are none.`,
     let end = at + heard.length;
     while (start > 0 && !/\s/.test(transcript[start - 1])) start--;
     while (end < transcript.length && !/\s|[.,?!]/.test(transcript[end])) end++;
-    const before = transcript.slice(start, at);
-    const after = transcript.slice(at + heard.length, end);
-    if (meant !== "?") meant = before + meant + after;
+    if (meant !== "?") meant = transcript.slice(start, at) + meant + transcript.slice(at + heard.length, end);
     heard = transcript.slice(start, end);
     if (seen.has(heard)) continue;
     seen.add(heard);
     let kind = ["mishearing", "term", "number"].includes(f.kind) ? f.kind : "mishearing";
     if (/\d/.test(heard + meant)) kind = "number";
     // A fix whose own evidence names a different number than it proposes is self-contradictory.
-    const whyNums = (text(f?.why).match(/\d+/g) || []);
+    const why = text(f.why);
+    const whyNums = why.match(/\d+/g) || [];
     const meantNums = meant.match(/\d+/g) || [];
     if (kind === "number" && whyNums.length && meantNums.length && !meantNums.every((n) => whyNums.includes(n))) continue;
-    const confident = f.confidence === "high";
-    const sounds = meant === "?" ? 0 : soundSimilarity(heard, meant);
     fixes.push({
       heard,
       meant,
       kind,
-      why: text(f?.why),
+      why,
       // Ticked by default only when it is a confident, sound-alike, non-number fix.
       // Numbers, names and terms are never pre-ticked: the user knows them, the AI only guesses.
-      checked: confident && kind === "mishearing" && meant !== "?" && sounds >= 0.5,
+      checked: f.confidence === "high" && kind === "mishearing" && meant !== "?" && soundSimilarity(heard, meant) >= 0.5,
     });
     if (fixes.length >= 30) break;
   }
-  return { fixes, model };
+  return { fixes };
 }
 
 /** 0–1: how alike two Korean strings sound, comparing their jamo (자모). */
@@ -615,6 +523,12 @@ function numbersIn(textValue) {
   return out;
 }
 
+/** Share (0–1) of the text that sits inside quotation marks. */
+function quotedShare(paragraphsList) {
+  const all = paragraphsList.join("");
+  return all ? paragraphsList.flatMap(quotedSpans).join("").length / all.length : 0;
+}
+
 /** Standalone 뭐/이제/막 per 1,000 characters: high means the text still reads like raw speech. */
 function fillerDensity(paragraphsList) {
   const all = paragraphsList.join(" ");
@@ -624,14 +538,19 @@ function fillerDensity(paragraphsList) {
 
 const indexWithNumbers = (t) => Object.assign(indexTranscript(t), { numbers: numbersIn(t) });
 
-function numberMismatch(sentence, index) {
-  if (!index?.numbers) return false;
-  for (const n of numbersIn(sentence)) if (!index.numbers.has(n)) return true;
-  return false;
-}
+/** Sentences the transcript doesn't back: too little support (see normalizeChapter) or a number it never states. */
+const unsupportedSentences = (texts, index, oral) =>
+  texts
+    .flatMap((p) => p.match(/[^.!?。]+[.!?。]?/g) || [])
+    .filter((s) => {
+      if (norm_(s).length < 8) return false;
+      const weak = oral ? support(s, index) < 0.45 : RISKY.test(s) && support(s, index) < 0.35;
+      return weak || [...numbersIn(s)].some((n) => !index.numbers.has(n));
+    })
+    .map((s) => s.trim());
 
 const norm_ = (s) => String(s || "").toLowerCase().replace(/[^가-힣a-z0-9]/g, "");
-const text = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
+const text = (v) => (v == null ? "" : String(v).trim());
 const list = (v) => (Array.isArray(v) ? v : []);
 const year = (v) => {
   const t = text(v);
@@ -661,19 +580,19 @@ function paragraphs(v) {
 }
 
 /** The epigraph and 맺는 말 are shown on their own pages, so chapters must not repeat them. */
-const reservedLines = (outline) => [...list(outline.lastWords), outline.epigraph].filter(Boolean);
+const reservedLines = (outline) => [...outline.lastWords, outline.epigraph].filter(Boolean);
 
 /** Keeps only lines found in the transcript (when an index is given). */
 const verified = (items, index) => (index ? items.filter((q) => isFromTranscript(q, index)) : items);
 
-function normalizeOutline(d, index, maxChapters, settings = {}) {
+function normalizeOutline(d, index, maxChapters, settings) {
   d = d && typeof d === "object" ? d : {};
   const chapters = list(d.chapters)
     .filter((c) => c && typeof c === "object" && text(c.title))
     .slice(0, maxChapters)
     .map((c) => ({
       title: text(c.title),
-      yearFrom: year(c.yearFrom ?? c.period),
+      yearFrom: year(c.yearFrom ?? c.period), // period: an outline saved by an older version, sent back on resume
       yearTo: year(c.yearTo),
       place: text(c.place),
       summary: text(c.summary),
@@ -691,49 +610,47 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
     similarity(q, title) > 0.8 ||
     lastWords.some((w) => similarity(q, w) > 0.6) ||
     !/(다|요|죠|까|네|니다)[.?!]?\s*$|[?!]\s*$/.test(q); // also: not a fragment
-  if ((index && epigraph && !isFromTranscript(epigraph, index)) || (epigraph && sameAsTitle(epigraph))) {
+  if (epigraph && ((index && !isFromTranscript(epigraph, index)) || sameAsTitle(epigraph))) {
     epigraph = chapters.flatMap((c) => c.quotes).find((q) => !sameAsTitle(q)) || "";
   }
   const kind = ["life", "work", "mixed"].includes(d.kind) ? d.kind : "life";
+  const subject = text(d.subjectName) || settings.subjectName;
 
   const timeline = list(d.timeline)
     .filter((t) => t && typeof t === "object" && text(t.event) && !aboutMissing(text(t.event)))
     .map((t) => {
       const ch = parseInt(t.chapter, 10);
       return {
-        year: year(t.year ?? t.when),
-        approx: t.approx === true || /무렵|쯤|경/.test(text(t.year ?? t.when)),
+        year: year(t.year),
+        approx: t.approx === true || /무렵|쯤|경/.test(text(t.year)),
         chapter: ch >= 1 && ch <= chapters.length ? ch : 0,
         event: text(t.event),
       };
     })
-    // In chapter order, then by year within a chapter (undated events go last in their chapter).
-    .map((t, i) => ({ t, i }))
-    .sort((a, b) => (a.t.chapter || 99) - (b.t.chapter || 99) || (Number(a.t.year) || 9999) - (Number(b.t.year) || 9999) || a.i - b.i)
-    .map(({ t }) => t);
+    // In chapter order, then by year within a chapter (undated events go last in their chapter;
+    // the sort is stable, so equal entries keep the model's order).
+    .sort((a, b) => (a.chapter || 99) - (b.chapter || 99) || (Number(a.year) || 9999) - (Number(b.year) || 9999));
 
   return {
     kind,
     speakerRole: text(d.speakerRole)
-      .replace(new RegExp(`\\s*${(text(d.subjectName) || settings.subjectName || "@@").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
+      .replace(new RegExp(`\\s*${(subject || "@@").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
       .trim(),
     speaksAs: d.speaksAs === "우리" ? "우리" : "나",
     title,
     subtitle: text(d.subtitle),
     subjectName: text(d.subjectName),
     birthYear: year(d.birthYear),
-    birthplace: text(d.birthplace ?? d.born),
+    birthplace: text(d.birthplace),
     epigraph,
     people: list(d.people)
       .filter((p) => p && typeof p === "object" && (text(p.name) || text(p.relation)))
       .map((p) => ({ name: text(p.name), relation: text(p.relation), note: withoutMissingTalk(text(p.note)) }))
       .filter((p) => {
-        const subject = text(d.subjectName) || settings.subjectName || "";
         if (subject && p.name === subject) return false; // the main character
         if (/주인공|^나\b|^나\(|본인/.test(p.relation)) return false;
         if (/들$|거래처|회사|공장/.test(p.relation) && !p.name) return false; // groups, not people
-        const interviewer = settings.interviewer || "";
-        if (p.name && interviewer && interviewer.includes(p.name)) return false; // the interviewer
+        if (p.name && settings.interviewer.includes(p.name)) return false; // the interviewer
         return true;
       }),
     chapters,
@@ -745,7 +662,7 @@ function normalizeOutline(d, index, maxChapters, settings = {}) {
   };
 }
 
-function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
+function normalizeChapter(d, index, plan, outline, settings) {
   d = d && typeof d === "object" ? d : {};
 
   // Drop paragraphs that mostly repeat an earlier one, and sentences said twice
@@ -781,18 +698,7 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
   // In 구술 정리 every sentence is presented as the speaker's own words, so every sentence
   // must be supported by the transcript; otherwise only story-like phrases are checked.
   const oral = settings.voice === "oral";
-  const unsupported = [];
-  for (const p of kept) {
-    const narration = oral ? p : p.replace(/[“"「『][^”"」』]*[”"」』]/g, " ");
-    for (const s of narration.match(/[^.!?。]+[.!?。]?/g) || []) {
-      if (norm_(s).length < 8) continue;
-      const weak = oral ? support(s, index) < 0.45 : RISKY.test(s) && support(s, index) < 0.35;
-      if (weak || numberMismatch(s, index)) unsupported.push(s.trim());
-    }
-  }
-
-  const all = kept.join("");
-  const quotedShare = all ? kept.flatMap(quotedSpans).join("").length / all.length : 0;
+  const unsupported = unsupportedSentences(oral ? kept : kept.map((p) => p.replace(/[“"「『][^”"」』]*[”"」』]/g, " ")), index, oral);
 
   const q = d.pullQuote && typeof d.pullQuote === "object" ? d.pullQuote : { text: d.pullQuote };
   let pullQuote = { text: dropFillers(text(q.text)), context: text(q.context) };
@@ -819,6 +725,5 @@ function normalizeChapter(d, index, plan, outline = {}, settings = {}) {
     excerpt: excerptOk ? excerpt : { q: "", a: "" },
     unverified,
     unsupported: unsupported.slice(0, 8),
-    quotedShare,
   };
 }

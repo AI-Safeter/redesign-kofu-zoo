@@ -5,6 +5,7 @@
 //   2. OpenRouter (https://openrouter.ai) when OPENROUTER_API_KEY is set: free models, used on
 //      their own or when the first gateway fails (no credit, outage).
 // Both speak the same API, so one client serves both.
+import { fail } from "./http.js";
 
 // Order from real runs: Nemotron answered reliably; ERNIE writes good Korean but often spends
 // its whole budget on hidden reasoning and returns nothing.
@@ -15,7 +16,7 @@ const OPENROUTER_DEFAULT_MODELS = [
 ];
 const NOUS_DEFAULT_MODELS = ["anthropic/claude-sonnet-5.5"];
 
-const list = (value, fallback) => {
+export const list = (value, fallback) => {
   const items = String(value || "").split(",").map((m) => m.trim()).filter(Boolean);
   return items.length ? items : fallback;
 };
@@ -50,16 +51,15 @@ const recentFailures = new Map();
 const SKIP_MS = 10 * 60 * 1000;
 function healthy(models) {
   const now = Date.now();
-  const ok = models.filter((m) => !(now - (recentFailures.get(m) || 0) < SKIP_MS));
+  const ok = models.filter((m) => now - (recentFailures.get(m) || 0) >= SKIP_MS);
   return ok.length ? ok : models;
 }
 
-const fail = (message, status = 500) => Object.assign(new Error(message), { status });
 const isClaude = (model) => /^anthropic\//.test(model);
 
 /** Pulls the JSON object out of a reply that may be wrapped in ``` fences or extra prose. */
 function extractJson(text) {
-  const cleaned = text.replace(/^﻿/, "").replace(/```(?:json)?/gi, "").trim();
+  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
   try {
     return JSON.parse(cleaned);
   } catch {}
@@ -80,14 +80,12 @@ function extractJson(text) {
  * the first call of a book it is billed at a fraction of the price.
  */
 export async function callGateways(args) {
-  const all = gateways();
-  if (!all.length) throw fail("글쓰기용 API 키가 서버에 설정되지 않았습니다.");
   let lastError;
-  for (const gw of all) {
+  for (const gw of gateways()) {
     try {
       return await callGateway(gw, args);
     } catch (err) {
-      if (args.signal?.aborted || err.status === 504) throw err;
+      if (args.signal.aborted || err.status === 504) throw err;
       lastError = err;
       console.warn(`${gw.name} failed (${err.message}); trying the next gateway`);
     }
@@ -99,17 +97,17 @@ async function callGateway(gw, args) {
   let models = healthy(gw.models);
   for (;;) {
     // Don't start another model when the function is about to run out of time.
-    if (args.deadline && args.deadline - Date.now() < 20_000) throw Object.assign(new Error("시간이 부족합니다. 다시 시도해 주세요."), { status: 504 });
+    if (args.deadline - Date.now() < 20_000) throw fail("시간이 부족합니다. 다시 시도해 주세요.", 504);
     try {
       return await attempt(gw, gw.fallbackList ? models : [models[0]], args);
     } catch (err) {
-      if (args.signal?.aborted) throw err;
+      if (args.signal.aborted) throw err;
       const failed = err.servedBy || (!gw.fallbackList && models[0]);
       if (err.retryOther && failed) recentFailures.set(failed, Date.now());
       const rest = models.filter((m) => m !== failed);
       // Without a list on the server side, an unusable model (error status) moves us on too.
       const moveOn = err.retryOther || (!gw.fallbackList && err.status !== 401 && err.status !== 402);
-      if (!moveOn || !failed || rest.length === 0 || rest.length === models.length) throw err;
+      if (!moveOn || rest.length === 0 || rest.length === models.length) throw err;
       console.warn(`${gw.name}: retrying without ${failed}`);
       models = rest;
     }
@@ -165,28 +163,21 @@ async function attempt(gw, models, { system, cached, userText, schema, schemaNam
   }
 
   // Read the server-sent event stream and collect the text.
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
   let lastSent = 0;
   let finish = null;
   let servedBy = models.length === 1 ? models[0] : "";
   let usage = null;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
+  for await (const chunk of res.body.pipeThrough(new TextDecoderStream())) {
+    const lines = (buffer + chunk).split("\n");
     buffer = lines.pop();
     for (const raw of lines) {
       const line = raw.trim();
       if (!line.startsWith("data:")) continue; // skips ": PROCESSING" keep-alives
-      const data = line.slice(5).trim();
-      if (data === "[DONE]") continue;
       let event;
       try {
-        event = JSON.parse(data);
+        event = JSON.parse(line.slice(5)); // also skips "[DONE]"
       } catch {
         continue;
       }

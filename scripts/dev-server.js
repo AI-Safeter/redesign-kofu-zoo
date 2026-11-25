@@ -3,7 +3,7 @@
 // Usage: npm run dev   (reads .env.local / .env if present)
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
@@ -11,13 +11,8 @@ import { pathToFileURL } from "node:url";
 const root = process.cwd();
 const PORT = Number(process.env.PORT) || 3000;
 
-for (const file of [".env.local", ".env"]) {
-  if (!existsSync(file)) continue;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && m[2] && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-  }
-}
+// Variables already in the environment win; .env.local wins over .env.
+for (const file of [".env.local", ".env"]) if (existsSync(file)) process.loadEnvFile(file);
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -25,9 +20,6 @@ const TYPES = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".ico": "image/x-icon",
 };
 
 async function handleApi(req, res, name) {
@@ -66,8 +58,7 @@ async function handleApi(req, res, name) {
 }
 
 async function handleStatic(req, res) {
-  let pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  let file = path.join(root, "public", pathname);
+  let file = path.join(root, "public", decodeURIComponent(new URL(req.url, "http://x").pathname));
   if (!file.startsWith(path.join(root, "public"))) return res.writeHead(403).end();
   try {
     if ((await stat(file)).isDirectory()) file = path.join(file, "index.html");
