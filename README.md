@@ -36,6 +36,7 @@ published copy in Vercel Blob ───▶ /read?id=… read-only page anyone wi
 ```
 
 - Long recordings are split in the browser, at quiet moments, so every request stays under Vercel's 4.5 MB body limit.
+- Recordings the browser can't decode itself (an iPhone's lossless voice memos, WMA, AMR) are converted to WAV in the browser by [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm), loaded from jsDelivr only for such files (about 30 MB, cached afterwards). Nothing is uploaded or stored for this.
 - **Why audio language models instead of Whisper:** on a real 9-minute Korean interview, scored on 17 hard spots (names, numbers, terms), Whisper got 5/17 on the app's pieces and 10/17 on the whole file; Qwen 3.8 Omni Flash and Gemini 2.5 Flash got 13–14/17 on the same pieces and invented nothing.
 - If the audio models fail (or the OpenRouter account has no credit), each piece falls back to Groq Whisper. When Groq's free tier says "slow down", the browser waits the time Groq asks for and retries.
 - The user never has to read the transcript. An AI proofreading step, helped by a second, independent transcription from Gemini 2.5 Flash, finds likely mishearings and applies only the confident sound-alike ones; numbers, names and terms are left as heard. Anything else is corrected in the finished book with 글 고치기.

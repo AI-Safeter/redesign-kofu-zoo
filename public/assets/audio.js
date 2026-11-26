@@ -29,6 +29,46 @@
     });
   }
 
+  // Recordings the browser can't decode itself (an iPhone's lossless ALAC memos, AMR, WMA, ...)
+  // are converted to 16 kHz WAV inside the browser by ffmpeg.wasm. It is fetched from the CDN
+  // only then (about 30 MB, cached by the browser afterwards); the recording is not uploaded.
+  var FFMPEG_CORE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js";
+
+  // Runs in a worker, so a long conversion doesn't freeze the page.
+  function ffmpegWorker(coreURL) {
+    self.importScripts(coreURL);
+    self.onmessage = async function (e) {
+      try {
+        var wasmURL = coreURL.replace(/\.js$/, ".wasm");
+        var ff = await self.createFFmpegCore({ mainScriptUrlOrBlob: coreURL + "#" + btoa(JSON.stringify({ wasmURL: wasmURL })) });
+        ff.FS.writeFile("in", new Uint8Array(e.data));
+        ff.exec("-i", "in", "-vn", "-ac", "1", "-ar", "16000", "out.wav");
+        if (ff.ret !== 0) throw new Error("ffmpeg exit " + ff.ret);
+        var out = ff.FS.readFile("out.wav");
+        self.postMessage(out.buffer, [out.buffer]);
+      } catch (err) {
+        self.postMessage({ error: String((err && err.message) || err) });
+      }
+    };
+  }
+
+  async function convertToWav(file) {
+    var data = await file.arrayBuffer();
+    var url = URL.createObjectURL(new Blob(["(" + ffmpegWorker + ")(" + JSON.stringify(FFMPEG_CORE) + ")"], { type: "text/javascript" }));
+    var worker = new Worker(url);
+    return new Promise(function (resolve, reject) {
+      worker.onmessage = function (e) {
+        if (e.data && e.data.error) reject(new Error(e.data.error));
+        else resolve(e.data);
+      };
+      worker.onerror = function (e) { reject(new Error(e.message || "ffmpeg worker failed")); };
+      worker.postMessage(data, [data]);
+    }).finally(function () {
+      worker.terminate();
+      URL.revokeObjectURL(url);
+    });
+  }
+
   // Mixes down to one channel without copying when the recording is already mono.
   function toMono(buffer) {
     var channels = buffer.numberOfChannels;
@@ -107,7 +147,15 @@
     try {
       buffer = await decode(await file.arrayBuffer());
     } catch (e) {
-      // A file the browser can't decode is not sent anyway: it is usually not audio at all.
+      try {
+        buffer = await decode(await convertToWav(file));
+      } catch (e2) {
+        console.warn("Could not convert the recording:", e2.message);
+        buffer = null;
+      }
+    }
+    if (!buffer) {
+      // Neither the browser nor ffmpeg could read it: it is usually not audio at all.
       throw new Error("녹음 파일을 읽지 못했습니다. 파일이 손상됐거나 녹음 파일이 아닐 수 있어요. MP3나 M4A 파일로 다시 올려 주세요.");
     }
 
