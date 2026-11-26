@@ -202,8 +202,6 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 .make-steps li.is-failed .dot::before { content: "!"; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.balance { margin: 24px 0 0; font-size: 0.8rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-
 /* ---------- Wide screens: sidebar beside the form ---------- */
 @media (min-width: 1024px) {
   .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
