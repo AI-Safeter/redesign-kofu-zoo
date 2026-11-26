@@ -1,14 +1,18 @@
 // Published books: one JSON file per book in Vercel Blob (BLOB_READ_WRITE_TOKEN, set when a
 // Blob store is connected to the project), or in this server's memory with MOCK_AI=1.
-import { BlobNotFoundError, del, get, head, put } from "@vercel/blob";
+// A book's photos are JPEG files next to it, under books/<id>/.
+import { BlobNotFoundError, del, get, head, list, put } from "@vercel/blob";
 import { isMock } from "./http.js";
 
 const memory = new Map(); // MOCK_AI only: lost when the dev server restarts
+const photoMemory = new Map(); // MOCK_AI only: path → bytes
 
 export const canPublish = () => isMock() || Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
 const pathOf = (id) => `books/${id}.json`;
 export const isBookId = (id) => /^[A-Za-z0-9_-]{12}$/.test(id);
+export const isPhotoId = (id) => typeof id === "string" && /^[a-z0-9]{6,32}$/.test(id);
+const photoPath = (id, photoId) => `books/${id}/${photoId}.jpg`;
 
 export async function saveBook(id, data) {
   const text = JSON.stringify(data);
@@ -25,8 +29,47 @@ export async function saveBook(id, data) {
 }
 
 export async function deleteBook(id) {
+  await deletePhotos(id, [...(await listPhotos(id)).keys()]);
   if (isMock()) return void memory.delete(id);
   await del(pathOf(id));
+}
+
+export async function savePhoto(id, photoId, bytes) {
+  if (isMock()) return void photoMemory.set(photoPath(id, photoId), Buffer.from(bytes));
+  await put(photoPath(id, photoId), bytes, {
+    access: "public",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "image/jpeg",
+    cacheControlMaxAge: 60, // gone within about a minute of 발행 취소, like the book
+  });
+}
+
+/** The book's stored photos: photo id → the address readers load it from. */
+export async function listPhotos(id) {
+  const prefix = `books/${id}/`;
+  const found = new Map();
+  const add = (pathname, url) => {
+    const m = pathname.slice(prefix.length).match(/^([a-z0-9]{6,32})\.jpg$/);
+    if (pathname.startsWith(prefix) && m) found.set(m[1], url);
+  };
+  if (isMock()) {
+    for (const [path, bytes] of photoMemory) add(path, `data:image/jpeg;base64,${bytes.toString("base64")}`);
+    return found;
+  }
+  let cursor;
+  do {
+    const page = await list({ prefix, cursor, limit: 1000 });
+    for (const b of page.blobs) add(b.pathname, b.url);
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  return found;
+}
+
+export async function deletePhotos(id, photoIds) {
+  const paths = photoIds.map((p) => photoPath(id, p));
+  if (isMock()) return void paths.forEach((p) => photoMemory.delete(p));
+  if (paths.length) await del(paths);
 }
 
 /** The stored book, or null when there is none with this id. */

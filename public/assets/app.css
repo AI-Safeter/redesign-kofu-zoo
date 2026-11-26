@@ -66,11 +66,14 @@ body {
 .library { list-style: none; margin: 0; padding: 0; }
 .library li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 0; border-top: 1px solid var(--line); }
 .library li:first-child { border-top: 0; }
-.library a.library__open { flex: 1 1 12em; min-width: 0; color: var(--ink); text-decoration: none; }
+.library a.library__open { flex: 1 1 100%; min-width: 0; color: var(--ink); text-decoration: none; }
 .library__name { display: block; font-weight: 600; font-size: 0.94rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .library__meta { display: block; font-size: 0.8rem; color: var(--ink-3); }
 .library a.library__open:hover .library__name { text-decoration: underline; text-underline-offset: 3px; }
-.library__actions { display: flex; gap: 6px; }
+.library__actions { display: flex; gap: 2px; margin-left: -10px; }
+/* Quiet row actions: the book's name is what you act on; these are there when needed. */
+.library__actions .btn { border-color: transparent; background: transparent; color: var(--ink-2); padding-inline: 10px; }
+.library__actions .btn:hover { background: var(--well); color: var(--ink); }
 
 /* ---------- Sections ---------- */
 .form-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -143,7 +146,8 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 .dropzone__icon { color: var(--ink-2); margin-bottom: 6px; }
 .dropzone__main { font-weight: 600; }
 .dropzone.is-disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
-.file-info { margin: 0 0 18px; font-size: 0.92rem; color: var(--ink-2); word-break: break-all; }
+.file-info { margin: 0 0 18px; font-size: 0.92rem; font-weight: 500; color: var(--ink); word-break: break-all; }
+.dropzone:has(~ .file-info:not([hidden]):not(.is-error)) { border-style: solid; }
 .file-info.is-error { color: var(--danger); font-weight: 500; }
 #tx-resume { margin: 0 0 16px; font-size: 0.92rem; }
 
@@ -173,7 +177,7 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 }
 .btn:hover { background: var(--well); }
 .btn--danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-tint); }
-.link-btn { display: block; margin: 8px auto 0; background: none; border: 0; color: var(--ink-3); font: 0.92rem var(--font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 44px; }
+.link-btn { display: block; margin: 8px auto 0; padding: 0; background: none; border: 0; color: var(--ink-3); font: 0.92rem var(--font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 44px; }
 .link-btn:hover { color: var(--ink); }
 
 /* ---------- Progress ---------- */
@@ -183,7 +187,7 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 /* ---------- Main action & book progress ---------- */
 .actions { padding-top: 24px; border-top: 1px solid var(--line); }
 
-.make-progress { margin-top: 24px; max-width: 46em; scroll-margin-top: 24px; }
+.make-progress { margin-top: 24px; scroll-margin-top: 24px; }
 .overall { margin-bottom: 16px; }
 .overall__text { margin: 12px 0 0; font-weight: 600; }
 #overall-eta { color: var(--ink-3); font-weight: 400; }
@@ -201,6 +205,15 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 .make-steps li.is-failed .dot { border-color: var(--danger); color: var(--danger); }
 .make-steps li.is-failed .dot::before { content: "!"; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Phones and tablets: 내 서재 after the form, so making a book comes first ---------- */
+@media (max-width: 1023.98px) {
+  .app { display: flex; flex-direction: column; }
+  .side { display: contents; }
+  .side__brand, .shelf { padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+  .side__brand { padding-top: 12px; padding-bottom: 8px; }
+  .shelf { order: 1; margin: 0 0 40px; padding-top: 24px; padding-bottom: 0; border-bottom: 0; border-top: 1px solid var(--line); }
+}
 
 /* ---------- Wide screens: sidebar beside the form ---------- */
 @media (min-width: 1024px) {

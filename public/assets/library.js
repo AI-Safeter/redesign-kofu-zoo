@@ -1,5 +1,6 @@
 /*
- * Books are kept in this browser's localStorage (nothing is stored on the server).
+ * Books are kept in this browser's localStorage, and their photos in its IndexedDB, which has
+ * room for them (nothing is stored on the server).
  * Also builds the standalone .html file a user can download and share.
  */
 (function () {
@@ -61,6 +62,8 @@
   }
 
   function del(id) {
+    var book = get(id);
+    if (book) photoIds(book).forEach(function (p) { removePhoto(p).catch(function () {}); });
     remove(BOOK + id);
     remove(TRANSCRIPT + id); // transcripts saved by earlier versions
     write(INDEX, (index()).filter(function (e) {
@@ -70,6 +73,87 @@
 
   function newId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  // ---------- Photos: JPEG Blobs in IndexedDB, keyed by photo id ----------
+
+  var db = null;
+  function photos(mode, work) {
+    db = db || new Promise(function (resolve, reject) {
+      var req = indexedDB.open("chronicle", 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore("photos"); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+    return db.then(function (d) {
+      return new Promise(function (resolve, reject) {
+        var tx = d.transaction("photos", mode);
+        var req = work(tx.objectStore("photos"));
+        tx.oncomplete = function () { resolve(req.result); };
+        tx.onabort = function () { reject(tx.error); };
+      });
+    }).catch(function (e) {
+      db = null; // e.g. Safari closed the connection while the page was in the background
+      throw e;
+    });
+  }
+
+  function photoIds(book) {
+    var ids = [];
+    (book.chapters || []).forEach(function (c) {
+      (c.photos || []).forEach(function (p) { ids.push(p.id); });
+    });
+    return ids;
+  }
+
+  // Scales the picture down to 1600px on its longest side and stores it as a JPEG. Drawing an
+  // image onto a canvas follows its EXIF rotation, and the JPEG made from it keeps no EXIF
+  // (so no place or date) at all.
+  function addPhoto(file) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.src = url;
+    return img.decode().then(function () {
+      var scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      var ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff"; // transparent parts of a PNG
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return new Promise(function (resolve, reject) {
+        canvas.toBlob(function (b) { if (b) resolve(b); else reject(); }, "image/jpeg", 0.82);
+      });
+    }).then(function (blob) {
+      var id = newId();
+      return photos("readwrite", function (s) { return s.put(blob, id); }).then(function () { return id; }, function () {
+        throw new Error("사진을 저장하지 못했어요.");
+      });
+    }, function () {
+      throw new Error("이 사진은 열 수 없어요. JPG나 PNG로 골라 주세요.");
+    }).finally(function () {
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  /** The photo's JPEG Blob, or undefined when this browser doesn't have it. */
+  function photo(id) {
+    return photos("readonly", function (s) { return s.get(id); });
+  }
+
+  function removePhoto(id) {
+    return photos("readwrite", function (s) { return s.delete(id); });
+  }
+
+  function dataUrl(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+      r.readAsDataURL(blob);
+    });
   }
 
   // ---------- Standalone export ----------
@@ -110,7 +194,8 @@
       '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
       "<title>" + esc(book.title) + (book.subtitle ? " — " + esc(book.subtitle) : "") + "</title>\n" +
       '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
-      '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">\n' +
+      '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">\n' +
       "<style>\n" + css.replace(/<\/style/gi, "<\\/style") + "\n</style>\n</head>\n<body>\n" +
       '<div id="book"></div>\n' +
       '<noscript><div style="max-width:40em;margin:0 auto;padding:24px 16px;font-family:serif;line-height:1.8;word-break:keep-all">' +
@@ -127,6 +212,21 @@
     var copy = Object.assign({}, book);
     delete copy.updatedAt;
     delete copy.published; // the key that updates the published page stays in this browser
+    // Photos go inside the file, so it needs nothing else to show them.
+    copy.chapters = [];
+    for (var i = 0; i < (book.chapters || []).length; i++) {
+      var c = book.chapters[i];
+      if (c.photos && c.photos.length) {
+        var inFile = [];
+        for (var j = 0; j < c.photos.length; j++) {
+          var p = c.photos[j];
+          var blob = await photo(p.id).catch(function () { return null; });
+          if (blob) inFile.push({ id: p.id, after: p.after, caption: p.caption, size: p.size, src: await dataUrl(blob) });
+        }
+        c = Object.assign({}, c, { photos: inFile });
+      }
+      copy.chapters.push(c);
+    }
     var html = await standaloneHtml(copy);
     var blob = new Blob([html], { type: "text/html;charset=utf-8" });
     var a = document.createElement("a");
@@ -147,5 +247,8 @@
     remove: del,
     newId: newId,
     download: download,
+    addPhoto: addPhoto,
+    photo: photo,
+    removePhoto: removePhoto,
   };
 })();

@@ -8,5 +8,6 @@ export async function GET(request) {
   const book = await loadBook(id).catch(() => null);
   if (!book) return errorResponse("책을 찾을 수 없어요.", 404);
   delete book.editHash;
+  delete book.pendingPhotos;
   return json(book);
 }

@@ -8,7 +8,8 @@
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="/assets/book.css">
 </head>
 <body>
@@ -25,6 +26,7 @@
       var id = new URLSearchParams(location.search).get("id");
       var book = id ? Library.get(id) : null;
       var warned = false;
+      var urls = {}; // photo id → promise of an object URL for its bytes in this browser
 
       if (!book) {
         root.innerHTML =
@@ -41,28 +43,44 @@
       ChronicleBook.mount(root, book, {
         homeHref: "/",
         onChange: function (b) {
-          if (!Library.save(b) && !warned) {
-            warned = true;
-            alert("브라우저 저장 공간이 부족해 고친 내용을 저장하지 못했습니다. 서재에서 ‘파일로 저장’으로 책을 내려받아 두세요.");
-          }
+          // The book may have been published from another tab since this one opened it: keep its key.
+          var saved = Library.get(b.id);
+          if (!b.published && saved && saved.published) b.published = saved.published;
+          save(b);
         },
         onPublish: config.publishing ? publish : null,
         onUnpublish: config.publishing ? unpublish : null,
         publishedUrl: book.published ? linkTo(book.published.id) : null,
+        addPhoto: Library.addPhoto,
+        removePhoto: function (id) {
+          Library.removePhoto(id).catch(function () {});
+          if (urls[id]) urls[id].then(function (u) { if (u) URL.revokeObjectURL(u); });
+          delete urls[id];
+        },
+        photoUrl: function (id) {
+          return (urls[id] = urls[id] || Library.photo(id).then(function (b) { return b ? URL.createObjectURL(b) : null; }));
+        },
       });
+
+      function save(b, always) {
+        if (!Library.save(b) && (always || !warned)) {
+          warned = true;
+          alert("브라우저 저장 공간이 부족해 고친 내용을 저장하지 못했습니다. 서재에서 ‘파일로 저장’으로 책을 내려받아 두세요.");
+        }
+      }
 
       function linkTo(id) { return location.origin + "/read?id=" + id; }
 
       // Calls /api/publish with the access code this device remembers; asks for it once if it
       // is missing or wrong.
-      async function call(method, body) {
+      async function call(method, body, query, headers) {
         var code = "";
         try { code = localStorage.getItem("chronicle:access") || ""; } catch (e) {}
         for (var tries = 0; ; tries++) {
-          var res = await fetch("/api/publish", {
+          var res = await fetch("/api/publish" + (query || ""), {
             method: method,
-            headers: Object.assign({ "content-type": "application/json" }, code ? { "x-access-code": encodeURIComponent(code) } : {}),
-            body: JSON.stringify(body),
+            headers: Object.assign({ "content-type": "application/json" }, headers, code ? { "x-access-code": encodeURIComponent(code) } : {}),
+            body: body instanceof Blob ? body : JSON.stringify(body),
           });
           var data = {};
           try { data = await res.json(); } catch (e) {}
@@ -78,21 +96,30 @@
         }
       }
 
-      // Uploads the book as a read-only page; publishing again updates the same link.
+      // Uploads the book as a read-only page; publishing again updates the same link. Photos the
+      // server doesn't have yet go up one by one after that, and the book is then published again
+      // so its page shows them.
       async function publish(b) {
         var copy = Object.assign({}, b);
         delete copy.published;
         var p = b.published || {};
         var data = await call("POST", { book: copy, id: p.id, token: p.token });
-        b.published = { id: data.id, token: data.token || p.token };
-        Library.save(b);
-        return linkTo(data.id);
+        p = b.published = { id: data.id, token: data.token || p.token };
+        save(b, true); // without the key this page could not be updated or taken down again
+        var missing = data.missing || [];
+        for (var i = 0; i < missing.length; i++) {
+          var blob = await Library.photo(missing[i]).catch(function () { return null; }); // gone from this browser: left out
+          if (blob) await call("PUT", blob, "?id=" + p.id + "&photo=" + missing[i], { "content-type": "image/jpeg", "x-edit-token": p.token });
+        }
+        if (missing.length) await call("POST", { book: copy, id: p.id, token: p.token });
+        return linkTo(p.id);
       }
 
       async function unpublish(b) {
+        if (!b.published) return;
         await call("DELETE", { id: b.published.id, token: b.published.token });
         delete b.published;
-        Library.save(b);
+        save(b, true);
       }
     })();
   </script>
