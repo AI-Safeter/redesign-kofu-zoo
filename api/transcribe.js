@@ -7,7 +7,7 @@
 //   Groq Whisper large-v3 (free tier) as the fallback.
 // TRANSCRIBE_PROVIDER=groq|openrouter forces one.
 import { checkAccess } from "./_lib/access.js";
-import { errorResponse, json, isMock } from "./_lib/http.js";
+import { errorResponse, errorSummary, json, isMock } from "./_lib/http.js";
 import { mockTranscribe } from "./_lib/mock.js";
 import { audioFormat, audioModelsEnabled, checkModel, transcribeWithAudioModels } from "./_lib/audio-llm.js";
 
@@ -112,7 +112,7 @@ async function recognize({ audio, type, name, model, prompt, signal }) {
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    console.error("Groq transcription failed", res.status, detail);
+    console.error("Groq transcription failed", res.status, errorSummary(detail));
     if (res.status === 429) {
       // Free-tier rate limit: tell the browser how long to wait before retrying this chunk.
       const retryAfter = Math.min(120, Math.max(3, Math.ceil(Number(res.headers.get("retry-after")) || 20)));
