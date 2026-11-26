@@ -202,12 +202,12 @@ async function attempt(gw, models, { system, cached, userText, schema, schemaNam
   logUsage(gw.name, servedBy, usage);
 
   if (finish === "length") {
-    console.error(`${gw.name} ${servedBy} hit the length limit after ${text.length} chars; tail:`, JSON.stringify(text.slice(-300)));
+    console.error(`${gw.name} ${servedBy} hit the length limit after ${text.length} chars`);
     throw Object.assign(fail("결과가 너무 길어 중간에 끊겼습니다. 다시 시도해 주세요."), { servedBy, retryOther: true });
   }
   const data = extractJson(text);
   if (!data) {
-    console.error(`${gw.name} ${servedBy} reply was not JSON:`, text.slice(0, 500));
+    console.error(`${gw.name} ${servedBy} reply was not JSON (${text.length} chars)`); // no content: it is the book's text
     throw Object.assign(fail("AI 응답을 해석하지 못했습니다. 다시 시도해 주세요."), { servedBy, retryOther: true });
   }
   return { data, model: servedBy };
