@@ -328,6 +328,8 @@ html, body {
 .photo figcaption:empty, .photo__tools, .photo--missing { display: none; }
 .is-editing .photo figcaption { display: block; min-height: 1.6em; }
 .is-editing .photo__tools { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
+/* A small photo's buttons may run wider than the photo: centred under it, within the screen. */
+.photo--s .photo__tools, .photo--m .photo__tools { position: relative; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); }
 .photo__size[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .is-editing .photo--missing { display: block; }
 
