@@ -68,8 +68,10 @@
           try { data = await res.json(); } catch (e) {}
           if (res.status === 401 && tries === 0) {
             code = (prompt("접근 코드") || "").trim();
-            try { localStorage.setItem("chronicle:access", code); } catch (e) {}
-            if (code) continue;
+            if (code) {
+              try { localStorage.setItem("chronicle:access", code); } catch (e) {}
+              continue;
+            }
           }
           if (!res.ok) throw new Error(data.error || "다시 시도해 주세요.");
           return data;

@@ -644,7 +644,13 @@
   function askAccessCode() {
     var gate = $("gate");
     gate.addEventListener("cancel", function (e) { e.preventDefault(); });
-    gate.showModal();
+    gate.hidden = false;
+    if (gate.showModal) gate.showModal();
+    else {
+      // No <dialog> support (iOS 15.3 and older): show it as a centred box instead.
+      gate.setAttribute("open", "");
+      gate.style.cssText = "position:fixed;inset:0;margin:auto;height:fit-content;z-index:10";
+    }
     return new Promise(function (resolve) {
       $("gate-form").addEventListener("submit", async function (e) {
         e.preventDefault();
@@ -660,7 +666,8 @@
         if (c && c.accessOk) {
           accessCode = code;
           sset(ACCESS_KEY, code);
-          gate.close();
+          gate.hidden = true;
+          if (gate.close) gate.close();
           resolve(c);
           return;
         }

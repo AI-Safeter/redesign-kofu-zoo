@@ -7,5 +7,16 @@
       "maxDuration": 300,
       "supportsCancellation": true
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/api/read",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        }
+      ]
+    }
+  ]
 }
