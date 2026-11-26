@@ -104,7 +104,7 @@ html, body {
 }
 
 .reader__replace { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--rule); font-family: var(--sans); }
-.reader__replace input { font: 0.95rem var(--sans); color: var(--ink); background: var(--page); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; min-height: 40px; width: 11em; max-width: 38vw; }
+.reader__replace input { font: 1rem var(--sans); color: var(--ink); background: var(--page); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; min-height: 44px; width: 11em; max-width: 38vw; }
 .reader__replace input[readonly] { width: 24em; max-width: 60vw; }
 .reader__replace-done { min-width: 3em; font-size: 0.9rem; color: var(--muted); }
 
@@ -341,7 +341,8 @@ html, body {
 .timeline__note { margin: -0.8em 0 1.6em; font: 0.88rem/1.6 var(--sans); color: var(--muted); word-break: keep-all; }
 .timeline__group { margin: 2em 0 0.6em; font: 600 0.9rem var(--sans); color: var(--accent); }
 .timeline__group:first-child { margin-top: 0; }
-.timeline__group a { color: inherit; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.timeline__group a { position: relative; color: inherit; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.timeline__group a::after { content: ""; position: absolute; inset: -12px 0; z-index: 1; }
 .timeline__group a:hover { border-bottom-color: var(--accent); }
 .timeline__list { border-left: 2px solid var(--rule); }
 .timeline__list li {
@@ -378,7 +379,7 @@ html, body {
 
 /* ---------- Small screens ---------- */
 @media (max-width: 600px) {
-  .reader__title { display: none; }
+  .reader__top:has(.btn) .reader__title { display: none; }
   .reader__actions { margin-left: auto; }
   .reader__stage { padding: 0; }
   .page { border-radius: 0; box-shadow: none; }
@@ -388,6 +389,13 @@ html, body {
   .people li { grid-template-columns: 1fr; gap: 2px; }
   .timeline__list li { grid-template-columns: 1fr; gap: 0; }
   .timeline__when { display: flex; gap: 8px; align-items: baseline; color: var(--accent); }
+}
+
+/* Landscape phones: the cover fits between the bars */
+@media (max-height: 500px) {
+  .cover { padding: 16px; }
+  .cover__main { padding: 0; }
+  .cover__title { font-size: 2.1rem; }
 }
 
 /* ---------- Print / Save as PDF ---------- */
