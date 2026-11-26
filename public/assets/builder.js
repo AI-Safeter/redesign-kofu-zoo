@@ -672,6 +672,18 @@
     });
   }
 
+  // Money left on the OpenRouter key, small at the bottom of the page.
+  function showBalance() {
+    fetch("/api/balance", { headers: headers() })
+      .then(function (res) { return res.ok ? res.json() : {}; })
+      .then(function (b) {
+        if (typeof b.openrouter !== "number") return;
+        $("balance").textContent = "OpenRouter $" + b.openrouter.toFixed(2);
+        $("balance").hidden = false;
+      })
+      .catch(function () {});
+  }
+
   async function init() {
     renderLibrary();
     try {
@@ -712,6 +724,7 @@
     if (config.mock) console.warn("MOCK_AI is on: transcripts and books are samples, not real AI output.");
     if (problems.length && $("notice").hidden) showNotice(problems);
     $("make-btn").disabled = !config.writing || !config.transcription;
+    showBalance();
   }
 
   init();

@@ -100,6 +100,7 @@ public/
     app.css             builder styles
 api/
   config.js             which features this deployment has keys for
+  balance.js            money left on the OpenRouter key, shown small at the bottom of the upload page
   transcribe.js         one audio chunk → text (OpenRouter audio models, Whisper fallback)
   _lib/audio-llm.js     transcription with audio language models (Qwen, Gemini) via OpenRouter
   outline.js            transcript → book plan
