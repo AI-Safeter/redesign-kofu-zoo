@@ -167,7 +167,26 @@
     return el("div", null, [frameNote(book), heading(p.label), epigraph, prose(book.prologue, "prologue")]);
   }
 
-  function chapterPage(book, p) {
+  // A photo: its own src (published and saved books), else the address options.photoUrl gives
+  // (the owner's copy, kept in this browser). Its caption is edited like the rest of the text.
+  function photo(ph, i, k, options) {
+    var fig = el("figure", { className: "photo" });
+    var img = el("img", { alt: "사진", loading: "lazy", decoding: "async" });
+    var missing = function () {
+      img.remove();
+      fig.classList.add("photo--missing");
+    };
+    img.addEventListener("error", missing);
+    if (typeof ph.src === "string" && ph.src) img.src = ph.src;
+    else if (options.photoUrl) options.photoUrl(ph.id).then(function (u) { if (u) img.src = u; else missing(); }, missing);
+    else return null;
+    fig.appendChild(img);
+    fig.appendChild(txt("figcaption", null, ph.caption, "chapters." + i + ".photos." + k + ".caption"));
+    if (options.onChange) fig.appendChild(el("button", { type: "button", className: "btn photo__remove", "data-photo": k, text: "사진 빼기" }));
+    return fig;
+  }
+
+  function chapterPage(book, p, layout, options) {
     var i = p.chapter;
     var c = book.chapters[i];
     var paras = c.paragraphs || [];
@@ -192,9 +211,18 @@
       }
     }
 
-    var body = el("div", { className: "prose" });
+    // Photos follow the paragraph numbered `after` (-1: before the first; past the end: at the end).
+    var photosAt = {};
+    (c.photos || []).forEach(function (ph, k) {
+      var fig = photo(ph, i, k, options);
+      var at = ph.after >= 0 ? Math.min(Math.floor(ph.after), paras.length - 1) : -1;
+      if (fig) (photosAt[at] = photosAt[at] || []).push(fig);
+    });
+
+    var body = el("div", { className: "prose" }, photosAt[-1]);
     paras.forEach(function (para, j) {
       body.appendChild(txt("p", j === 0 ? "lead" : null, para, "chapters." + i + ".paragraphs." + j));
+      (photosAt[j] || []).forEach(function (fig) { body.appendChild(fig); });
       if (q && j === quoteAfter) body.appendChild(pullQuote(q, i));
     });
 
@@ -313,7 +341,7 @@
     epilogue: epiloguePage,
   };
 
-  function buildPages(book) {
+  function buildPages(book, options) {
     // First lay out which pages exist, so the contents and timeline can link to them.
     var layout = [];
     var add = function (kind, label, chapter) {
@@ -330,7 +358,7 @@
     if ((book.timeline || []).some(function (t) { return t.year || t.when; })) add("timeline", "연보");
     add("epilogue", "에필로그");
     layout.forEach(function (p) {
-      p.node = builders[p.kind](book, p, layout);
+      p.node = builders[p.kind](book, p, layout, options);
     });
     return layout;
   }
@@ -352,7 +380,7 @@
   function mount(root, book, options) {
     options = options || {};
     book.chapters = book.chapters || [];
-    var pages = buildPages(book);
+    var pages = buildPages(book, options);
     var current = 0;
     var editing = false;
 
@@ -386,6 +414,7 @@
     async function publish() {
       if (editing) setEditing(false); // saves what was typed
       publishBtn.disabled = true;
+      if (unpublishBtn) unpublishBtn.disabled = true; // nothing to take down until this is done
       linkBar.hidden = false;
       linkStatus.textContent = "발행 중";
       try {
@@ -395,6 +424,7 @@
         linkStatus.textContent = e.message;
       } finally {
         publishBtn.disabled = false;
+        if (unpublishBtn) unpublishBtn.disabled = false;
       }
     }
     async function unpublish() {
@@ -417,8 +447,10 @@
     var findIn = el("input", { type: "text", placeholder: "찾을 말", "aria-label": "찾을 말" });
     var replaceIn = el("input", { type: "text", placeholder: "바꿀 말", "aria-label": "바꿀 말" });
     var replaceDone = el("span", { className: "reader__replace-done", role: "status" });
+    var photoIn = el("input", { type: "file", accept: "image/*", hidden: "hidden" });
+    var photoBtn = options.addPhoto ? button("사진 넣기", null, function () { photoIn.click(); }) : null;
     var replaceBar = options.onChange
-      ? el("form", { className: "reader__replace", hidden: "hidden" }, [findIn, el("span", { "aria-hidden": "true", text: "→" }), replaceIn, el("button", { type: "submit", className: "btn", text: "모두 바꾸기" }), replaceDone])
+      ? el("form", { className: "reader__replace", hidden: "hidden" }, [findIn, el("span", { "aria-hidden": "true", text: "→" }), replaceIn, el("button", { type: "submit", className: "btn", text: "모두 바꾸기" }), photoBtn, photoBtn ? photoIn : null, replaceDone])
       : null;
     if (replaceBar) {
       replaceBar.addEventListener("submit", function (e) {
@@ -480,6 +512,7 @@
       whereNum.textContent = i + 1 + " / " + pages.length + "쪽";
       prev.disabled = i === 0;
       next.disabled = i === pages.length - 1;
+      if (photoBtn) photoBtn.disabled = photoBusy || pages[i].kind !== "chapter";
       bar.firstChild.style.width = ((i + 1) / pages.length) * 100 + "%";
       try {
         if (push) history.pushState(null, "", "#" + (i + 1));
@@ -506,6 +539,8 @@
         e.preventDefault();
         go(parseInt(link.getAttribute("data-goto"), 10), true, true);
       }
+      var out = e.target.closest(".photo__remove");
+      if (out && editing) removePhoto(parseInt(out.getAttribute("data-photo"), 10));
     });
 
     document.addEventListener("keydown", function (e) {
@@ -586,20 +621,92 @@
       document.execCommand("insertText", false, text);
     });
 
+    function editable(n, on) {
+      if (on) n.setAttribute("contenteditable", "plaintext-only");
+      else n.removeAttribute("contenteditable");
+      if (n.parentNode.classList.contains("photo")) {
+        // A caption may be empty: it then shows only while editing, as an outlined box.
+        if (on) n.setAttribute("aria-label", "사진 설명");
+        else n.removeAttribute("aria-label");
+        if (!on && !n.textContent.trim()) n.textContent = "";
+      }
+    }
+
     function setEditing(on) {
       editing = on;
       root.classList.toggle("is-editing", on);
       editBtn.textContent = on ? "고치기 끝" : "글 고치기";
       replaceBar.hidden = !on;
       replaceDone.textContent = "";
-      stage.querySelectorAll("[data-path]").forEach(function (n) {
-        if (on) n.setAttribute("contenteditable", "plaintext-only");
-        else n.removeAttribute("contenteditable");
-      });
+      stage.querySelectorAll("[data-path]").forEach(function (n) { editable(n, on); });
       if (!on) {
         clearTimeout(saveTimer);
         options.onChange(book);
       }
+    }
+
+    // ----- Photos (while editing) -----
+    // A new photo follows the paragraph last edited on this page, or else ends the chapter.
+    var lastPara = null; // [chapter, paragraph]
+    var photoBusy = false;
+    stage.addEventListener("focusin", function (e) {
+      var m = /^chapters\.(\d+)\.paragraphs\.(\d+)$/.exec(e.target.getAttribute("data-path") || "");
+      if (m) lastPara = [+m[1], +m[2]];
+    });
+    photoIn.addEventListener("change", function () {
+      var file = photoIn.files[0];
+      var k = current;
+      var ci = pages[k].chapter;
+      photoIn.value = "";
+      if (!file || pages[k].kind !== "chapter") return;
+      var c = book.chapters[ci];
+      var after = lastPara && lastPara[0] === ci ? lastPara[1] : (c.paragraphs || []).length - 1;
+      photoBusy = photoBtn.disabled = true;
+      replaceDone.textContent = "";
+      options.addPhoto(file).then(function (id) {
+        (c.photos = c.photos || []).push({ id: id, after: after, caption: "" });
+        saveNow();
+        var cap = rebuild(k).querySelector('[data-path="chapters.' + ci + ".photos." + (c.photos.length - 1) + '.caption"]');
+        if (k !== current || !editing) return;
+        cap.focus();
+        // The picture's height is known only once it has loaded: then bring the whole photo into view.
+        var img = cap.parentNode.querySelector("img");
+        if (img) img.addEventListener("load", function () { cap.parentNode.scrollIntoView({ block: "nearest" }); }, { once: true });
+      }, function (e) {
+        replaceDone.textContent = e.message;
+      }).then(function () {
+        photoBusy = false;
+        photoBtn.disabled = pages[current].kind !== "chapter";
+      });
+    });
+
+    function removePhoto(k) {
+      var ci = pages[current].chapter;
+      var c = book.chapters[ci];
+      var ph = c.photos.splice(k, 1)[0];
+      if (!c.photos.length) delete c.photos;
+      if (options.removePhoto) options.removePhoto(ph.id);
+      saveNow();
+      // Focus goes back to the text the photo followed.
+      var paras = rebuild(current).querySelectorAll('[data-path^="chapters.' + ci + '.paragraphs."]');
+      var para = paras[Math.max(0, Math.min(ph.after, paras.length - 1))];
+      if (para) para.focus({ preventScroll: true });
+    }
+
+    // Builds a page again from the book, after a photo was put in or taken out.
+    function rebuild(k) {
+      var p = pages[k];
+      var node = builders[p.kind](book, p, pages, options);
+      p.node.replaceWith(node);
+      p.node = node;
+      if (editing) node.querySelectorAll("[data-path]").forEach(function (n) { editable(n, true); });
+      return node;
+    }
+
+    function saveNow() {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      options.onChange(book);
     }
 
     go(fromHash(), false);

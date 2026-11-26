@@ -42,6 +42,7 @@ published copy in Vercel Blob ───▶ /read?id=… read-only page anyone wi
 - The user never has to read the transcript. An AI proofreading step, helped by a second, independent transcription from Gemini 2.5 Flash, finds likely mishearings and applies only the confident sound-alike ones; numbers, names and terms are left as heard. Anything else is corrected in the finished book with 글 고치기.
 - Each chapter is its own request, so no single function call comes close to the 300 s limit. The transcript is sent with prompt caching, so repeated calls for one book reuse it cheaply.
 - Books live in the browser that made them. Only a book you **발행** is stored on the server (Vercel Blob), and **발행 취소** deletes it. **파일로 저장** in 내 서재 downloads a single self-contained `.html` file you can send to family.
+- **사진 넣기** (in 글 고치기) adds a photo with a caption after the paragraph being edited. Photos are scaled down to 1600 px as JPEGs (no EXIF, so no location) and kept in the browser's IndexedDB; they go into the file made by **파일로 저장**, and to the server only with **발행하기** (under the book's own folder, removed by **발행 취소**).
 - A book in progress is saved after every step: if a chapter fails or the page is reloaded, **이어서 쓰기** continues where it stopped.
 - A model that loops or returns broken JSON is skipped and the request is retried on the next model.
 
@@ -97,7 +98,7 @@ public/
     audio.js            in-browser decoding and chunking of the recording
     book-render.js      e-book renderer (also inlined into downloaded books)
     book.css            e-book styles (also inlined into downloaded books)
-    library.js          localStorage library + standalone HTML export
+    library.js          localStorage library, photos in IndexedDB, standalone HTML export
     app.css             builder styles
 api/
   config.js             which features this deployment has keys for
@@ -106,7 +107,7 @@ api/
   outline.js            transcript → book plan
   chapter.js            transcript + plan → one chapter
   fixes.js              transcript → suggested corrections of mishearings
-  publish.js            book → read-only page in Vercel Blob (same link when published again); DELETE removes it
+  publish.js            book → read-only page in Vercel Blob (same link when published again); PUT adds a photo; DELETE removes it
   read.js               published book for /read?id=…
   _lib/books.js         Vercel Blob storage (in memory with MOCK_AI=1)
   _lib/writer.js        prompts, JSON schemas, output clean-up and checks

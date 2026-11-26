@@ -60,6 +60,11 @@ html, body {
   font-family: var(--sans);
 }
 .reader__top { top: 0; border-bottom: 1px solid var(--rule); }
+/* Three columns, so the title sits at the true centre whatever the widths of the two sides. */
+.reader__top { display: grid; grid-template-columns: 1fr minmax(0, auto) 1fr; }
+.reader__home { grid-column: 1; justify-self: start; }
+.reader__title { grid-column: 2; }
+.reader__actions { grid-column: 3; justify-self: end; }
 .reader__home {
   color: var(--ink-soft);
   text-decoration: none;
@@ -94,10 +99,17 @@ html, body {
   min-width: 44px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn:disabled { opacity: 0.45; cursor: default; }
+/* While editing, 고치기 끝 is the one thing to press next. */
+.is-editing .reader__actions .btn:first-child,
+.is-editing .reader__actions .btn:first-child:hover { background: var(--accent); border-color: var(--accent); color: var(--page); }
 .btn:focus-visible, .reader__home:focus-visible, .toc__link:focus-visible, .timeline__group a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -143,7 +155,7 @@ html, body {
 @keyframes enter-back { from { opacity: 0.4; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .page.enter-fwd, .page.enter-back { animation: none; } }
 
-.page__inner { position: relative; padding: clamp(36px, 8vw, 80px) clamp(22px, 7.5vw, 80px) 64px; }
+.page__inner { position: relative; min-height: 100%; padding: clamp(36px, 8vw, 80px) clamp(22px, 7.5vw, 80px) 64px; }
 .page__folio {
   position: absolute;
   bottom: 20px;
@@ -314,6 +326,15 @@ html, body {
 .excerpt__q::before { content: "묻는 말 — "; color: var(--muted); }
 .excerpt__a { margin: 0; line-height: 1.75; word-break: keep-all; }
 
+/* Photos: the width of the text, with a caption under them */
+.photo { margin: 1.8em 0; scroll-margin: 76px 0 96px; } /* clear of the top and bottom bars */
+.photo img { display: block; width: 100%; height: auto; border-radius: 10px; background: var(--accent-soft); }
+.photo figcaption { margin: 10px 0 0; font: 0.88rem/1.6 var(--sans); color: var(--muted); text-align: center; word-break: keep-all; }
+.photo figcaption:empty, .photo__remove, .photo--missing { display: none; }
+.is-editing .photo figcaption { display: block; min-height: 1.6em; }
+.is-editing .photo__remove { display: block; margin: 12px auto 0; }
+.is-editing .photo--missing { display: block; }
+
 /* Notes on what to check against the transcript — shown only while editing */
 .verify-note { display: none; }
 .is-editing .verify-note {
@@ -385,6 +406,10 @@ html, body {
   .page { border-radius: 0; box-shadow: none; }
   .page__inner { padding-left: 22px; padding-right: 22px; }
   .reader__nav .btn { min-width: 76px; padding: 0 12px; }
+  /* Fields fill the row; the buttons wrap below them, aligned left. */
+  .reader__replace { justify-content: flex-start; }
+  .reader__replace input { flex: 1 1 7em; width: auto; max-width: none; min-width: 0; }
+  .reader__replace input[readonly] { flex-basis: 100%; width: auto; max-width: none; }
   .toc__link { grid-template-columns: 3.2em 1fr auto; }
   .people li { grid-template-columns: 1fr; gap: 2px; }
   .timeline__list li { grid-template-columns: 1fr; gap: 0; }
@@ -406,7 +431,7 @@ html, body {
     --paper: #fff; --page: #fff; --ink: #000; --ink-soft: #333; --muted: #555; --rule: #ccc; --accent: #2c4a78; --accent-soft: #eef1f6;
     --text-size: 10.5pt; --leading: 1.8; color-scheme: light;
   }
-  .reader__top, .reader__nav, .reader__progress, .reader__replace, .verify-note { display: none !important; }
+  .reader__top, .reader__nav, .reader__progress, .reader__replace, .verify-note, .photo__remove { display: none !important; }
   .reader__stage { display: block; padding: 0; }
   .page { display: block !important; box-shadow: none; max-width: none; animation: none !important; break-after: page; }
   .page:last-child { break-after: auto; }
@@ -419,5 +444,6 @@ html, body {
   .cover { min-height: 170mm; }
   .excerpt, .letter { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .chapter__head, .page__heading { break-after: avoid; }
-  .pullquote, .timeline__list li, .epigraph, .people li { break-inside: avoid; }
+  .pullquote, .timeline__list li, .epigraph, .people li, .photo { break-inside: avoid; }
+  .photo img { max-width: 100%; max-height: 150mm; width: auto; margin: 0 auto; }
 }
