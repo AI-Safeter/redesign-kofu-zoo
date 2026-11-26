@@ -260,7 +260,7 @@
       doneHere++;
       // Saved as each piece arrives, so a reload or a sleeping phone doesn't lose it:
       // choosing the same file again continues where it stopped.
-      sset(TX_KEY, JSON.stringify({ id: tx.id, name: tx.file.name, total: total, texts: tx.texts, alts: tx.alts }));
+      sset(TX_KEY, JSON.stringify({ id: tx.id, name: tx.file.name, hint: hint, total: total, texts: tx.texts, alts: tx.alts }));
       progress();
     }
 
@@ -278,8 +278,6 @@
     tx.altText = join(tx.alts);
     tx.done = true;
     tx.prepared = null; // release the decoded audio
-    sdel(TX_KEY);
-    $("tx-resume").hidden = true;
     return tx.text;
   }
 
@@ -333,9 +331,19 @@
     sdel(JOB_KEY);
   }
 
+  var starting = false; // set while checks run before the job starts, so a double tap starts one run
   async function startGeneration(e) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || starting) return;
+    starting = true;
+    try {
+      await startJob();
+    } finally {
+      starting = false;
+    }
+  }
+
+  async function startJob() {
     showError("");
     if (!audioFile) {
       showError("녹음 파일을 골라 주세요.");
@@ -350,8 +358,9 @@
           !confirm("녹음이 " + formatDuration(secs) + "이에요. 휴대폰에서는 90분이 넘는 녹음을 받아쓰다 멈출 수 있어요. 컴퓨터에서 하시길 권해요. 그래도 계속할까요?")) return;
     }
     var unfinished = sgetJson(JOB_KEY);
-    if (unfinished && unfinished.outline && (!job || job.id !== unfinished.id)) {
-      if (!confirm("만들다 만 책 《" + unfinished.outline.title + "》이 있어요. 새 책을 만들면 그 책은 사라집니다. 계속할까요?")) return;
+    if (unfinished && unfinished.transcript && (!job || job.id !== unfinished.id)) {
+      var what = unfinished.outline ? "만들다 만 책 《" + unfinished.outline.title + "》이" : "받아쓰기까지 마친 녹음이";
+      if (!confirm(what + " 있어요. 새 책을 만들면 그 작업은 사라집니다. 계속할까요?")) return;
     }
     $("resume").hidden = true;
 
@@ -436,7 +445,11 @@
   var wakeLock = null;
   async function keepAwake(on) {
     try {
-      if (on && navigator.wakeLock && !wakeLock) wakeLock = await navigator.wakeLock.request("screen");
+      if (on && navigator.wakeLock && !wakeLock) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        // The browser lets go of it whenever the page is hidden.
+        wakeLock.addEventListener("release", function () { wakeLock = null; });
+      }
       if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
     } catch (e) { wakeLock = null; }
   }
@@ -473,6 +486,11 @@
         job.transcript = await autoFix(heard, job.settings);
         steps.transcribe.set("done");
         saveJob();
+        // The pieces' copy can go once the job holding the whole transcript is safely saved.
+        if ((sgetJson(JOB_KEY) || {}).transcript) {
+          sdel(TX_KEY);
+          $("tx-resume").hidden = true;
+        }
       }
       var payload = { transcript: job.transcript, settings: job.settings };
 
@@ -535,7 +553,10 @@
 
       // 4) Assemble and save
       var book = assemble();
-      if (!Library.save(book)) {
+      // The job copy holds the transcript and every chapter: if storage is full, drop it and retry.
+      var saved = Library.save(book) || (sdel(JOB_KEY), Library.save(book));
+      if (!saved) {
+        saveJob();
         showError("브라우저 저장 공간이 부족합니다. 책을 파일로 내려받습니다.");
         await Library.download(book);
         return;
@@ -550,6 +571,7 @@
       if (!job.outline) steps[job.transcript ? "outline" : "transcribe"].set("failed", "다시 시도 필요");
       showError(err.message);
       updateOverall("잠시 멈췄어요");
+      $("overall-eta").textContent = ""; // no time left to show while stopped
     } finally {
       clearInterval(ticker);
       saveJob();
@@ -610,6 +632,10 @@
     setBusyUi(false); // hides the progress list, now that there is no job
   });
 
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && busy) keepAwake(true);
+  });
+
   window.addEventListener("beforeunload", function (e) {
     if (busy) {
       e.preventDefault();
@@ -621,9 +647,11 @@
 
   function restoreSavedWork() {
     var saved = sgetJson(JOB_KEY);
-    if (saved && saved.outline) {
+    if (saved && saved.transcript) {
       var done = (saved.chapters || []).filter(Boolean).length;
-      $("resume-text").textContent = "만들던 책 《" + saved.outline.title + "》이 있어요 (" + done + "/" + saved.outline.chapters.length + "장 완료). 이어서 쓸까요?";
+      $("resume-text").textContent = saved.outline
+        ? "만들던 책 《" + saved.outline.title + "》이 있어요 (" + done + "/" + saved.outline.chapters.length + "장 완료). 이어서 쓸까요?"
+        : "받아쓰기까지 마친 녹음이 있어요. 이어서 쓸까요?";
       $("resume").hidden = false;
       $("resume-go").onclick = function () {
         if (busy) return;
@@ -643,7 +671,9 @@
   // Shown until the right code is entered; the code is then remembered on this device.
   function askAccessCode() {
     var gate = $("gate");
+    var accepted = false;
     gate.addEventListener("cancel", function (e) { e.preventDefault(); });
+    gate.addEventListener("close", function () { if (!accepted && gate.showModal) gate.showModal(); });
     gate.hidden = false;
     if (gate.showModal) gate.showModal();
     else {
@@ -666,6 +696,7 @@
         if (c && c.accessOk) {
           accessCode = code;
           sset(ACCESS_KEY, code);
+          accepted = true;
           gate.hidden = true;
           if (gate.close) gate.close();
           resolve(c);
@@ -684,6 +715,7 @@
     try {
       var unfinishedTx = sgetJson(TX_KEY);
       if (unfinishedTx && unfinishedTx.texts) {
+        if (unfinishedTx.hint && !$("hint").value) $("hint").value = unfinishedTx.hint; // it is part of what "the same" means
         var n = unfinishedTx.texts.filter(function (t) { return t != null; }).length;
         $("tx-resume").textContent = "‘" + unfinishedTx.name + "’ 받아쓰기가 " + n + "/" + unfinishedTx.total + "에서 멈췄어요. 같은 파일을 고르면 이어서 받아씁니다.";
         $("tx-resume").hidden = false;

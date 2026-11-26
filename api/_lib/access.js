@@ -39,6 +39,9 @@ export async function accessStatus(request) {
   if (right && known.has(addr)) return "ok";
   const limit = right ? MAX_TRIES : MAX_TRIES + 1; // the 20th wrong try is still only "wrong"
   if (mine.length >= limit || (lockedUntil.get(addr) || 0) > now) return "locked";
+  // Where a wrong code wouldn't reach the store yet, a right one that finds a lock there must
+  // answer "wrong" too; otherwise "locked" would give away which guess was the code.
+  const wrongWouldCheck = mine.length + (right ? 1 : 0) >= STORE_AFTER;
 
   if (useStore() && (right || mine.length >= STORE_AFTER)) {
     try {
@@ -58,6 +61,7 @@ export async function accessStatus(request) {
       for (const [t, n] of stored) {
         total += n >= 1 && n <= STORE_AFTER ? n : 1;
         if (total >= limit) {
+          if (!wrongWouldCheck) return "wrong";
           // Locked until the oldest of the tries that reach the limit is a day old.
           lockedUntil.set(addr, t + WINDOW_MS);
           return "locked";

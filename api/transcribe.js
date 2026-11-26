@@ -41,15 +41,18 @@ export async function POST(request) {
   const prev = (url.searchParams.get("prev") || "").slice(-300).trim();
 
   const groq = groqEnabled();
+  // Vercel stops the function at 300 s: every engine together gets 270 s.
+  const started = Date.now();
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(270_000)]);
   const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
   if (audioModelsEnabled() && audioFormat(type, name)) {
     try {
       // The second model runs at the same time; its text only feeds the proofreading step.
       const second = checkModel();
       const altPromise = second
-        ? transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal, only: second }).catch(() => null)
+        ? transcribeWithAudioModels({ audio, type, name, hint, prev, signal, only: second }).catch(() => null)
         : Promise.resolve(null);
-      const main = await transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal });
+      const main = await transcribeWithAudioModels({ audio, type, name, hint, prev, signal });
       // The second opinion only helps proofreading: wait at most 20 s more for it.
       const alt = await Promise.race([altPromise, new Promise((r) => setTimeout(() => r(null), 20_000))]);
       return json({ text: tidy(main.text), alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
@@ -61,14 +64,14 @@ export async function POST(request) {
   }
   if (!groq) return errorResponse("음성 인식용 API 키가 서버에 설정되지 않았습니다.", 500);
 
-  const first = await recognize({ audio, type, name, model: process.env.GROQ_TRANSCRIBE_MODEL || "whisper-large-v3", prompt: hint, signal: request.signal });
+  const first = await recognize({ audio, type, name, model: process.env.GROQ_TRANSCRIBE_MODEL || "whisper-large-v3", prompt: hint, signal });
   if (first.error) return first.error;
   let best = first;
 
   // Whisper sometimes skips speech (one long segment with very little text) or loops.
   // Try again once without the hint, on the other Whisper model.
-  if (suspicious(first.segments)) {
-    const second = await recognize({ audio, type, name, model: "whisper-large-v3-turbo", prompt: "", signal: request.signal });
+  if (suspicious(first.segments) && Date.now() - started < 150_000) {
+    const second = await recognize({ audio, type, name, model: "whisper-large-v3-turbo", prompt: "", signal });
     if (!second.error && score(second) > score(first)) best = second;
   }
   return json({ text: buildText(best) });

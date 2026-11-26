@@ -53,11 +53,11 @@ function alignFrom(q, t, start) {
     if (i >= q.length) return true;
     // Find the next stretch a little further on (skipped fillers or words).
     const piece = q.slice(i, i + MIN);
-    if (piece.length < MIN) return t.slice(pos, pos + GAP + piece.length).includes(piece);
     const next = t.indexOf(piece, pos);
     if (next < 0 || next - pos > GAP) return false;
     // Skipping 안/못/않/없/아니 would reverse the meaning ("돈을 못 받았어요" → "돈을 받았어요").
     if (/안|못|않|없|아니/.test(t.slice(pos, next))) return false;
+    if (piece.length < MIN) return true; // the short tail of the quote, found after a small gap
     pos = next;
   }
   return true;
