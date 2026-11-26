@@ -194,7 +194,8 @@
       '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
       "<title>" + esc(book.title) + (book.subtitle ? " — " + esc(book.subtitle) : "") + "</title>\n" +
       '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
-      '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">\n' +
+      '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">\n' +
       "<style>\n" + css.replace(/<\/style/gi, "<\\/style") + "\n</style>\n</head>\n<body>\n" +
       '<div id="book"></div>\n' +
       '<noscript><div style="max-width:40em;margin:0 auto;padding:24px 16px;font-family:serif;line-height:1.8;word-break:keep-all">' +
@@ -220,7 +221,7 @@
         for (var j = 0; j < c.photos.length; j++) {
           var p = c.photos[j];
           var blob = await photo(p.id).catch(function () { return null; });
-          if (blob) inFile.push({ id: p.id, after: p.after, caption: p.caption, src: await dataUrl(blob) });
+          if (blob) inFile.push({ id: p.id, after: p.after, caption: p.caption, size: p.size, src: await dataUrl(blob) });
         }
         c = Object.assign({}, c, { photos: inFile });
       }

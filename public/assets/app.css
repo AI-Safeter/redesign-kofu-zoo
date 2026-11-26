@@ -206,6 +206,15 @@ input:focus, select:focus { outline: 2px solid transparent; border-color: var(--
 .make-steps li.is-failed .dot::before { content: "!"; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- Phones and tablets: 내 서재 after the form, so making a book comes first ---------- */
+@media (max-width: 1023.98px) {
+  .app { display: flex; flex-direction: column; }
+  .side { display: contents; }
+  .side__brand, .shelf { padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+  .side__brand { padding-top: 12px; padding-bottom: 8px; }
+  .shelf { order: 1; margin: 0 0 40px; padding-top: 24px; padding-bottom: 0; border-bottom: 0; border-top: 1px solid var(--line); }
+}
+
 /* ---------- Wide screens: sidebar beside the form ---------- */
 @media (min-width: 1024px) {
   .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }

@@ -13,7 +13,7 @@
   --accent-soft: #e4eaf3;
   --shadow: 0 1px 2px rgba(20, 30, 45, 0.06), 0 14px 40px rgba(20, 30, 45, 0.10);
   --serif: "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif;
-  --sans: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --text-size: 1.0625rem;
   --leading: 1.85;
   color-scheme: light dark;
@@ -272,14 +272,7 @@ html, body {
 /* Chapter opening */
 .page--chapter .page__inner { padding-top: clamp(48px, 12vw, 120px); }
 .chapter__head { margin-bottom: 2.4em; }
-.chapter__num {
-  margin: 0;
-  font: 700 clamp(3.2rem, 12vw, 4.6rem)/1 var(--serif);
-  color: var(--accent);
-  opacity: 0.35;
-  font-variant-numeric: lining-nums;
-}
-.chapter__label { margin: 10px 0 8px; font: 600 0.85rem var(--sans); letter-spacing: 0.2em; color: var(--accent); }
+.chapter__label { margin: 0 0 8px; font: 600 0.85rem var(--sans); letter-spacing: 0.2em; color: var(--accent); }
 .chapter__title {
   margin: 0 0 14px;
   font-size: clamp(1.75rem, 6vw, 2.35rem);
@@ -330,9 +323,12 @@ html, body {
 .photo { margin: 1.8em 0; scroll-margin: 76px 0 96px; } /* clear of the top and bottom bars */
 .photo img { display: block; width: 100%; height: auto; border-radius: 10px; background: var(--accent-soft); }
 .photo figcaption { margin: 10px 0 0; font: 0.88rem/1.6 var(--sans); color: var(--muted); text-align: center; word-break: keep-all; }
-.photo figcaption:empty, .photo__remove, .photo--missing { display: none; }
+.photo--m { width: 75%; margin-inline: auto; }
+.photo--s { width: 50%; margin-inline: auto; }
+.photo figcaption:empty, .photo__tools, .photo--missing { display: none; }
 .is-editing .photo figcaption { display: block; min-height: 1.6em; }
-.is-editing .photo__remove { display: block; margin: 12px auto 0; }
+.is-editing .photo__tools { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
+.photo__size[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .is-editing .photo--missing { display: block; }
 
 /* Notes on what to check against the transcript — shown only while editing */
@@ -431,7 +427,7 @@ html, body {
     --paper: #fff; --page: #fff; --ink: #000; --ink-soft: #333; --muted: #555; --rule: #ccc; --accent: #2c4a78; --accent-soft: #eef1f6;
     --text-size: 10.5pt; --leading: 1.8; color-scheme: light;
   }
-  .reader__top, .reader__nav, .reader__progress, .reader__replace, .verify-note, .photo__remove { display: none !important; }
+  .reader__top, .reader__nav, .reader__progress, .reader__replace, .verify-note, .photo__tools { display: none !important; }
   .reader__stage { display: block; padding: 0; }
   .page { display: block !important; box-shadow: none; max-width: none; animation: none !important; break-after: page; }
   .page:last-child { break-after: auto; }

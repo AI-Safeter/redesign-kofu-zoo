@@ -169,8 +169,10 @@
 
   // A photo: its own src (published and saved books), else the address options.photoUrl gives
   // (the owner's copy, kept in this browser). Its caption is edited like the rest of the text.
+  var PHOTO_SIZES = [["s", "작게"], ["m", "보통"], ["l", "크게"]]; // the width of the text: half, ¾, all
+
   function photo(ph, i, k, options) {
-    var fig = el("figure", { className: "photo" });
+    var fig = el("figure", { className: "photo photo--" + (ph.size === "s" || ph.size === "m" ? ph.size : "l") });
     var img = el("img", { alt: "사진", loading: "lazy", decoding: "async" });
     var missing = function () {
       img.remove();
@@ -182,7 +184,12 @@
     else return null;
     fig.appendChild(img);
     fig.appendChild(txt("figcaption", null, ph.caption, "chapters." + i + ".photos." + k + ".caption"));
-    if (options.onChange) fig.appendChild(el("button", { type: "button", className: "btn photo__remove", "data-photo": k, text: "사진 빼기" }));
+    if (options.onChange) {
+      fig.appendChild(el("div", { className: "photo__tools" }, PHOTO_SIZES.map(function (s) {
+        var on = (ph.size || "l") === s[0];
+        return el("button", { type: "button", className: "btn photo__size", "data-photo": k, "data-size": s[0], "aria-pressed": String(on), text: s[1] });
+      }).concat(el("button", { type: "button", className: "btn photo__remove", "data-photo": k, text: "사진 빼기" }))));
+    }
     return fig;
   }
 
@@ -228,7 +235,6 @@
 
     var meta = [yearsOf(c), agesOf(book, c), c.place].filter(Boolean);
     var head = el("header", { className: "chapter__head" }, [
-      el("p", { className: "chapter__num", "aria-hidden": "true", text: String(i + 1) }),
       el("p", { className: "chapter__label", text: chapterLabel(i) }),
       txt("h2", "chapter__title", c.title, "chapters." + i + ".title"),
       meta.length ? el("p", { className: "chapter__meta", text: meta.join("  ·  ") }) : null,
@@ -541,6 +547,8 @@
       }
       var out = e.target.closest(".photo__remove");
       if (out && editing) removePhoto(parseInt(out.getAttribute("data-photo"), 10));
+      var size = e.target.closest(".photo__size");
+      if (size && editing) resizePhoto(size);
     });
 
     document.addEventListener("keydown", function (e) {
@@ -679,6 +687,17 @@
         photoBtn.disabled = pages[current].kind !== "chapter";
       });
     });
+
+    function resizePhoto(btn) {
+      var ph = book.chapters[pages[current].chapter].photos[parseInt(btn.getAttribute("data-photo"), 10)];
+      var s = btn.getAttribute("data-size");
+      if (s === "l") delete ph.size; // full width is the default: old books need nothing new
+      else ph.size = s;
+      var fig = btn.closest(".photo");
+      fig.className = "photo photo--" + s;
+      fig.querySelectorAll(".photo__size").forEach(function (b) { b.setAttribute("aria-pressed", String(b === btn)); });
+      saveNow();
+    }
 
     function removePhoto(k) {
       var ci = pages[current].chapter;

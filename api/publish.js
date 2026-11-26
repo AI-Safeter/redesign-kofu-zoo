@@ -108,7 +108,8 @@ function readerCopy(b, stored) {
         pending.push(p.id);
         return [];
       }
-      return [{ id: p.id, after: p.after, caption: typeof p.caption === "string" ? p.caption.slice(0, 1000) : "", src: stored.get(p.id) }];
+      const size = p.size === "s" || p.size === "m" ? { size: p.size } : {};
+      return [{ id: p.id, after: p.after, caption: typeof p.caption === "string" ? p.caption.slice(0, 1000) : "", ...size, src: stored.get(p.id) }];
     });
   const copy = {
     ...pick(b, ["kind", "speakerRole", "speaksAs", "title", "subtitle", "subjectName", "birthYear", "birthplace", "epigraph", "people", "prologue", "lastWords", "timeline", "epilogue", "createdAt"]),
