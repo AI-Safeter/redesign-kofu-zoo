@@ -31,15 +31,21 @@
     } catch (e) {}
   }
 
+  // The list of books; anything else stored there (damaged or from another version) counts as empty.
+  function index() {
+    var x = read(INDEX);
+    return Array.isArray(x) ? x : [];
+  }
+
   function list() {
-    return (read(INDEX) || []).sort(function (a, b) {
+    return index().sort(function (a, b) {
       return (b.updatedAt || "").localeCompare(a.updatedAt || "");
     });
   }
 
   function save(book) {
     book.updatedAt = new Date().toISOString();
-    var current = read(INDEX) || [];
+    var current = index();
     var wasListed = current.some(function (e) { return e.id === book.id; });
     if (!write(BOOK + book.id, book)) return false;
     var idx = current.filter(function (e) { return e.id !== book.id; });
@@ -57,7 +63,7 @@
   function del(id) {
     remove(BOOK + id);
     remove(TRANSCRIPT + id); // transcripts saved by earlier versions
-    write(INDEX, (read(INDEX) || []).filter(function (e) {
+    write(INDEX, (index()).filter(function (e) {
       return e.id !== id;
     }));
   }

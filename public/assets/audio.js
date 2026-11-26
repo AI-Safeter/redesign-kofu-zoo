@@ -56,7 +56,10 @@
     var data = await file.arrayBuffer();
     var url = URL.createObjectURL(new Blob(["(" + ffmpegWorker + ")(" + JSON.stringify(FFMPEG_CORE) + ")"], { type: "text/javascript" }));
     var worker = new Worker(url);
+    var timer;
     return new Promise(function (resolve, reject) {
+      // A blocked or stalled download must not leave the page waiting forever.
+      timer = setTimeout(function () { reject(new Error("ffmpeg timed out")); }, 5 * 60 * 1000);
       worker.onmessage = function (e) {
         if (e.data && e.data.error) reject(new Error(e.data.error));
         else resolve(e.data);
@@ -64,6 +67,7 @@
       worker.onerror = function (e) { reject(new Error(e.message || "ffmpeg worker failed")); };
       worker.postMessage(data, [data]);
     }).finally(function () {
+      clearTimeout(timer);
       worker.terminate();
       URL.revokeObjectURL(url);
     });
@@ -144,26 +148,29 @@
     // Refuse very long recordings before decoding them, which could crash a phone's browser.
     if ((await metadataSeconds(file)) > MAX_SEC) throw new Error(TOO_LONG);
     var buffer;
+    var converted = false;
     try {
       buffer = await decode(await file.arrayBuffer());
     } catch (e) {
       try {
         buffer = await decode(await convertToWav(file));
+        converted = true;
       } catch (e2) {
         console.warn("Could not convert the recording:", e2.message);
-        buffer = null;
+        // ffmpeg ran and refused the file: it is damaged or not audio. Anything else (the converter
+        // didn't load, timed out or ran out of memory) is about this device, not the file.
+        throw new Error(/^ffmpeg exit/.test(e2.message)
+          ? "녹음 파일을 읽지 못했습니다. 파일이 손상됐거나 녹음 파일이 아닐 수 있어요. MP3나 M4A 파일로 다시 올려 주세요."
+          : "이 기기에서는 이 녹음 형식을 바꾸지 못했어요. 녹음 앱에서 MP3나 M4A(압축)로 저장하거나 컴퓨터에서 다시 올려 주세요.");
       }
-    }
-    if (!buffer) {
-      // Neither the browser nor ffmpeg could read it: it is usually not audio at all.
-      throw new Error("녹음 파일을 읽지 못했습니다. 파일이 손상됐거나 녹음 파일이 아닐 수 있어요. MP3나 M4A 파일로 다시 올려 주세요.");
     }
 
     var duration = buffer.duration;
     if (duration > MAX_SEC) throw new Error(TOO_LONG);
     // Small files the API accepts as-is: send the original (better quality, fewer requests).
-    if (file.size <= DIRECT_MAX && DIRECT_TYPES.test(file.name)) {
-      return { duration: duration, chunks: [{ getBlob: function () { return file; }, name: file.name, type: file.type || "audio/mpeg" }] };
+    if (!converted && file.size <= DIRECT_MAX && DIRECT_TYPES.test(file.name)) {
+      var type = file.type || (/\.wav$/i.test(file.name) ? "audio/wav" : "audio/mpeg");
+      return { duration: duration, chunks: [{ getBlob: function () { return file; }, name: file.name, type: type }] };
     }
 
     var rate = buffer.sampleRate;

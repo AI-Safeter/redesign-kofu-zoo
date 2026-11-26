@@ -1,6 +1,6 @@
 // Published books: one JSON file per book in Vercel Blob (BLOB_READ_WRITE_TOKEN, set when a
 // Blob store is connected to the project), or in this server's memory with MOCK_AI=1.
-import { del, get, put } from "@vercel/blob";
+import { BlobNotFoundError, del, get, head, put } from "@vercel/blob";
 import { isMock } from "./http.js";
 
 const memory = new Map(); // MOCK_AI only: lost when the dev server restarts
@@ -32,7 +32,14 @@ export async function deleteBook(id) {
 /** The stored book, or null when there is none with this id. */
 export async function loadBook(id) {
   if (isMock()) return memory.has(id) ? JSON.parse(memory.get(id)) : null;
-  const res = await get(pathOf(id), { access: "public" });
+  // head() asks the store itself, not its CDN, so an unpublished book is gone at once. The copy
+  // is then read by its version, so a re-published book can't come from the cache either.
+  const meta = await head(pathOf(id)).catch((err) => {
+    if (err instanceof BlobNotFoundError) return null;
+    throw err;
+  });
+  if (!meta) return null;
+  const res = await get(`${meta.url}?v=${encodeURIComponent(meta.etag)}`, { access: "public" });
   if (!res || res.statusCode !== 200) return null;
   return JSON.parse(await new Response(res.stream).text());
 }

@@ -41,6 +41,7 @@ export async function POST(request) {
   const prev = (url.searchParams.get("prev") || "").slice(-300).trim();
 
   const groq = groqEnabled();
+  const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
   if (audioModelsEnabled() && audioFormat(type, name)) {
     try {
       // The second model runs at the same time; its text only feeds the proofreading step.
@@ -51,10 +52,10 @@ export async function POST(request) {
       const main = await transcribeWithAudioModels({ audio, type, name, hint, prev, signal: request.signal });
       // The second opinion only helps proofreading: wait at most 20 s more for it.
       const alt = await Promise.race([altPromise, new Promise((r) => setTimeout(() => r(null), 20_000))]);
-      const tidy = (t) => paragraphs(collapseRepeats(t.replace(/\s*\n\s*/g, " ")));
       return json({ text: tidy(main.text), alt: alt && alt.model !== main.model ? tidy(alt.text) : undefined });
     } catch (err) {
       console.warn("Audio models failed, falling back to Whisper:", err.message);
+      if (!groq && err.thin) return json({ text: tidy(err.thin.text) }); // a quiet piece: little to hear
       if (!groq) return errorResponse("음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.", 502);
     }
   }

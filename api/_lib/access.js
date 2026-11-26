@@ -10,6 +10,10 @@ import { errorResponse, isMock } from "./http.js";
 
 const MAX_TRIES = 20;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+// Wrong tries reach the store only once an instance has seen 5 from an address: a typo costs no
+// store operations, and guesses spread over many addresses can't use up the Blob plan's quota.
+// The first stored file then counts for all 5.
+const STORE_AFTER = 5;
 
 const tries = new Map(); // address → times of wrong tries seen by this instance
 const lockedUntil = new Map(); // address → time, once a lock was found in the store
@@ -28,6 +32,7 @@ export async function accessStatus(request) {
   const addr = addressOf(request, code);
   const right = matches(header, code);
 
+  if (tries.size > 5000) for (const [k, v] of tries) if (!recent(v, now).length) tries.delete(k);
   const mine = recent(tries.get(addr) || [], now);
   if (!right) mine.push(now); // counted before anything is awaited, so parallel guesses add up
   tries.set(addr, mine);
@@ -35,20 +40,28 @@ export async function accessStatus(request) {
   const limit = right ? MAX_TRIES : MAX_TRIES + 1; // the 20th wrong try is still only "wrong"
   if (mine.length >= limit || (lockedUntil.get(addr) || 0) > now) return "locked";
 
-  if (useStore()) {
+  if (useStore() && (right || mine.length >= STORE_AFTER)) {
     try {
       const prefix = `access/${addr}/`;
       if (!right) {
-        await put(`${prefix}${now}-${randomBytes(4).toString("hex")}`, "1", { access: "public", addRandomSuffix: false, contentType: "text/plain" });
+        // File name: time, how many tries it stands for, and a random part.
+        const count = mine.length === STORE_AFTER ? STORE_AFTER : 1;
+        await put(`${prefix}${now}-${count}-${randomBytes(4).toString("hex")}`, "1", { access: "public", addRandomSuffix: false, contentType: "text/plain" });
       }
       const { blobs } = await list({ prefix, limit: 1000 });
-      const time = (b) => Number(b.pathname.slice(prefix.length).split("-")[0]);
-      const old = blobs.filter((b) => now - time(b) >= WINDOW_MS);
+      const parts = (b) => b.pathname.slice(prefix.length).split("-").map(Number);
+      const old = blobs.filter((b) => now - parts(b)[0] >= WINDOW_MS);
       if (old.length) del(old.map((b) => b.url)).catch(() => {});
-      const stored = blobs.filter((b) => now - time(b) < WINDOW_MS).map(time).sort((a, b) => a - b);
-      if (stored.length >= limit) {
-        lockedUntil.set(addr, stored[stored.length - MAX_TRIES] + WINDOW_MS);
-        return "locked";
+      // Newest first. Files from before the count was added (time-random) stand for one try.
+      const stored = blobs.map(parts).filter(([t]) => now - t < WINDOW_MS).sort((a, b) => b[0] - a[0]);
+      let total = 0;
+      for (const [t, n] of stored) {
+        total += n >= 1 && n <= STORE_AFTER ? n : 1;
+        if (total >= limit) {
+          // Locked until the oldest of the tries that reach the limit is a day old.
+          lockedUntil.set(addr, t + WINDOW_MS);
+          return "locked";
+        }
       }
     } catch (err) {
       console.error("Access-try store failed; counting in memory only:", err.message);

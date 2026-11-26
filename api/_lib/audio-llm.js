@@ -5,6 +5,7 @@
 //   qwen/qwen3.8-omni-flash 14/17 (~$0.02 per hour of audio), google/gemini-2.5-flash 13/17
 //   (~$0.15/hour), Groq whisper-large-v3 5/17. They also kept fillers Whisper silently drops,
 //   and invented no passages. Whisper (Groq) remains the free fallback.
+import { errorSummary } from "./http.js";
 import { list } from "./openrouter.js";
 
 const DEFAULT_MODELS = ["qwen/qwen3.8-omni-flash", "google/gemini-2.5-flash"];
@@ -70,6 +71,7 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
   const seconds = format === "wav" ? wavSeconds(audio) : null;
   const data = Buffer.from(audio).toString("base64");
   let lastError;
+  let thin = null; // the longest answer rejected only for being short: a mostly silent piece
 
   for (const model of only ? [only] : list(process.env.OPENROUTER_AUDIO_MODELS, DEFAULT_MODELS)) {
     try {
@@ -97,14 +99,17 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
           ],
         }),
       });
-      if (!res.ok) throw new Error(`${model}: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
+      if (!res.ok) throw new Error(`${model}: HTTP ${res.status} ${errorSummary(await res.text().catch(() => ""))}`);
       const body = await res.json();
       const choice = body.choices?.[0];
       const text = clean(choice?.message?.content);
       const chars = text.replace(/\s/g, "").length;
       // Reject refusals, empty answers for real audio, and answers cut off by the length limit.
       if (isRefusal(text)) throw new Error(`${model}: refused`);
-      if (seconds && seconds > 20 && chars < seconds * 0.5) throw new Error(`${model}: too little text (${chars} chars for ${Math.round(seconds)} s)`);
+      if (seconds && seconds > 20 && chars < seconds * 0.5) {
+        if (!thin || text.length > thin.text.length) thin = { text, model };
+        throw new Error(`${model}: too little text (${chars} chars for ${Math.round(seconds)} s)`);
+      }
       if (choice?.finish_reason === "length") throw new Error(`${model}: cut off`);
       return { text, model };
     } catch (err) {
@@ -112,7 +117,8 @@ export async function transcribeWithAudioModels({ audio, type, name, hint, prev,
       lastError = err;
     }
   }
-  throw lastError;
+  // The caller uses `thin` when there is no Whisper to try instead.
+  throw Object.assign(lastError, { thin });
 }
 
 /**
