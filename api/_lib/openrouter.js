@@ -5,7 +5,7 @@
 //   2. OpenRouter (https://openrouter.ai) when OPENROUTER_API_KEY is set: free models, used on
 //      their own or when the first gateway fails (no credit, outage).
 // Both speak the same API, so one client serves both.
-import { fail } from "./http.js";
+import { errorSummary, fail } from "./http.js";
 
 // Order from real runs: Nemotron answered reliably; ERNIE writes good Korean but often spends
 // its whole budget on hidden reasoning and returns nothing.
@@ -155,7 +155,7 @@ async function attempt(gw, models, { system, cached, userText, schema, schemaNam
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    console.error(`${gw.name} error`, res.status, detail.slice(0, 500));
+    console.error(`${gw.name} error`, res.status, errorSummary(detail));
     if (res.status === 401) throw fail(`${gw.name} API 키가 올바르지 않습니다.`, 401);
     if (res.status === 402) throw fail(`${gw.name} 크레딧이 부족합니다.`, 402);
     if (res.status === 429) throw fail("AI 모델 사용량 한도에 걸렸습니다. 1~2분 뒤 다시 시도해 주세요.", 429);
@@ -182,7 +182,7 @@ async function attempt(gw, models, { system, cached, userText, schema, schemaNam
         continue;
       }
       if (event.error) {
-        console.error(`${gw.name} stream error`, event.error);
+        console.error(`${gw.name} stream error`, errorSummary(event.error));
         throw Object.assign(fail("AI 모델이 응답 도중 멈췄습니다. 다시 시도해 주세요.", 502), { servedBy, retryOther: true });
       }
       if (event.model) servedBy = event.model;

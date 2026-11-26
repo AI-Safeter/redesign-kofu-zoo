@@ -10,6 +10,22 @@ export function errorResponse(message, status = 400) {
 
 export const fail = (message, status = 500) => Object.assign(new Error(message), { status });
 
+/**
+ * An AI provider's error, for the logs: its code and message only. Raw bodies and metadata can
+ * quote the interview or the book, which must not end up in the logs.
+ */
+export function errorSummary(error) {
+  if (typeof error === "string") {
+    try {
+      const parsed = JSON.parse(error);
+      error = parsed?.error ?? parsed;
+    } catch {
+      return `(${error.length} chars, not JSON)`;
+    }
+  }
+  return `${error?.code ?? error?.type ?? ""} ${String(error?.message ?? "").slice(0, 200)}`.trim();
+}
+
 export const isMock = () => process.env.MOCK_AI === "1";
 
 /**
